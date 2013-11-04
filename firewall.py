@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
+import socket
+import struct
+import time
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -49,22 +52,32 @@ class Firewall:
                 socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
 
         # ... and simply allow the packet.
-        if pkt_dir == PKT_DIR_INCOMING:
+        if pkt_dir == PKT_DIR_INCOMING:# and self.passPacket(passDrop, packetType, ipAddress, port):
             self.iface_int.send_ip_packet(pkt)
-        elif pkt_dir == PKT_DIR_OUTGOING:
+        elif pkt_dir == PKT_DIR_OUTGOING:# and self.passPacket(passDrop, packetType, ipAddress, port):
             self.iface_ext.send_ip_packet(pkt)
+        import sys
+        sys.exit()
 
+    def passPacket(self, passDrop, packetType, ipAddress, port):
+        result = "pass"
+        for rule in self.rules:
+            currentResult = rule.getPacketResult(passDrop, packetType, ipAddress, port)
+            if currentResult != "nomatch":
+                result = currentResult
+        return result == "pass"
     # TODO: You can add more methods as you want.
 
 # TODO: You may want to add more classes/functions as well.
     def parseRules(self, file):
         ruleFile = open(file)
-        for line in ruleFile.readLines():
+        for line in ruleFile.readlines():
             tokens = line.split()
-
-            if tokens[0] == "%":
+            print tokens
+            if len(tokens) == 0:
+                pass
+            elif tokens[0] == "%":
                 continue
-
             elif len(tokens) == 3:
                 self.rules.append(Rule(tokens[0], tokens[1], tokens[2]))
             else:
@@ -86,7 +99,7 @@ class Rule:
             else:
                 if len(self.ipAddress) == 1:
                     return self.passDrop
-                elif self.ipAddress[1:] == hostName[len(hostName)-len(self.ipAddress)-1):]:
+                elif self.ipAddress[1:] == hostName[(len(hostName)-len(self.ipAddress)-1):]:
                     return self.passDrop
                 else:
                     return "nomatch"
@@ -127,11 +140,11 @@ class Rule:
                 return "nomatch"
 
     def prefixMask(self, addr, addrToMatch, prefix):
-         toMatchList = addrToMatch.split(".")
-         numList = addr.split(".")
-         numToMatch = 0
-         num = 0
-         for i in range(4):
+        toMatchList = addrToMatch.split(".")
+        numList = addr.split(".")
+        numToMatch = 0
+        num = 0
+        for i in range(4):
             numToMatch = numToMatch << 8
             numToMatch += int(toMatchList[i])
 
