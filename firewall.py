@@ -51,18 +51,13 @@ class Firewall:
         else:
             dir_str = 'outgoing'
 
-        # if pkt_dir == PKT_DIR_INCOMING:# and self.passPacket(pktStuff,src_ip):
-        #     self.iface_int.send_ip_packet(pkt)
-        # elif pkt_dir == PKT_DIR_OUTGOING: #and self.passPacket(pktStuff,dst_ip):
-        #     self.iface_ext.send_ip_packet(pkt)
-
         pktStuff = self.packetType(pkt,ip_headerLen)
         if pktStuff == None:
             if pkt_dir == PKT_DIR_INCOMING:
                 self.iface_int.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_OUTGOING:
                 self.iface_ext.send_ip_packet(pkt)
-        elif pkt_dir == PKT_DIR_INCOMING:# and self.passPacket(pktStuff,src_ip):
+        elif pkt_dir == PKT_DIR_INCOMING:
             self.iface_int.send_ip_packet(pkt)
         elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
             self.iface_ext.send_ip_packet(pkt)
@@ -104,7 +99,6 @@ class Firewall:
                 return False
             else:
                 index = dnsOffset + 12
-                #pkt = pkt[offset+13:]
                 remainingChars = struct.unpack('!B',pkt[index])[0]
                 domainName = ""
                 while remainingChars > 0:
@@ -246,6 +240,3 @@ def getRelation(ipAddress, lowerBound, upperBound):
         elif int(ipAddrParts[i]) > int(upperBoundParts[i]):
             return ">"
     return "="
-    
-
-
