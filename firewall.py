@@ -10,7 +10,7 @@ import time
 # You must NOT use any 3rd-party libraries, though.
 
 geoTable = {}
-geoIpdb = open("geoipdb.txt")
+geoIpdb = open("geoipdbempty.txt")
 for line in geoIpdb.readlines():
     startIP, endIP, countryCode = line.split()
     if countryCode not in geoTable.keys():
@@ -30,7 +30,7 @@ class Firewall:
 
     def handle_timer(self):
         # TODO: For the timer feature, refer to bypass.py
-        print '%s: I am still alive' % time.ctime()
+        # print '%s: I am still alive' % time.ctime()
         self.timer.schedule(time.time() + 10.0)
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
@@ -63,8 +63,8 @@ class Firewall:
             self.iface_ext.send_ip_packet(pkt)
 
 
-        #print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
-        #        socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
+        # print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
+        #        socket.inet_ntoa(src_ip), dst_ip)
 
 
     def packetType(self, pkt, offset):
@@ -161,13 +161,15 @@ class Rule:
         if ptype == "dns":
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
                 return self.passDrop
-            else:
+            elif "*" in self.ipAddress:
                 if len(self.ipAddress) == 1:
                     return self.passDrop
                 elif self.ipAddress[1:] == hostName[-len(self.ipAddress[1:]):]:
                     return self.passDrop
                 else:
                     return "nomatch"
+            else:
+                return "nomatch"
         else: # protocols
             if ptype == self.packetType:
 
