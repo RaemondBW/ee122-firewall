@@ -55,23 +55,26 @@ class Firewall:
         else:
             dir_str = 'outgoing'
 
-        pktStuff = packetType(pkt,ip_headerLen)
+        pktStuff = self.packetType(pkt,ip_headerLen)
         if pktStuff == None:
             if pkt_dir == PKT_DIR_INCOMING:
                 self.iface_int.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_OUTGOING:
                 self.iface_ext.send_ip_packet(pkt)
-        if passPacket(pktStuff['type'], ipAddress, )
+        elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip):
+            self.iface_int.send_ip_packet(pkt)
+        elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
+            self.iface_ext.send_ip_packet(pkt)
 
 
         #print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
         #        socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
 
         # ... and simply allow the packet.
-        if pkt_dir == PKT_DIR_INCOMING:
-            self.iface_int.send_ip_packet(pkt)
-        elif pkt_dir == PKT_DIR_OUTGOING:
-            self.iface_ext.send_ip_packet(pkt)
+        # if pkt_dir == PKT_DIR_INCOMING:
+        #     self.iface_int.send_ip_packet(pkt)
+        # elif pkt_dir == PKT_DIR_OUTGOING:
+        #     self.iface_ext.send_ip_packet(pkt)
 
     def packetType(self, pkt, offset):
         protocol, = struct.unpack('!B', pkt[9])
@@ -81,7 +84,7 @@ class Firewall:
         elif protocol == 17:
             dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
             src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
-            dns = isDNS(pkt, offset)
+            dns = self.isDNS(pkt, offset)
             if dns:
                 packetDict = {"ptype":"dns", "hostname":dns}
             else:
@@ -121,14 +124,20 @@ class Firewall:
                     return domainName
                 return False
 
-            
-    #Broken
-    def passPacket(self, packetType, ipAddress, port):
-        result = "pass"
+
+    def passPacket(self, packetDict, ip):
         for rule in self.rules:
-            currentResult = rule.getPacketResult(ptype, addr, eport, hostName)
+            hostname = None
+            eport = None
+            if packetDict.has_key('hostname'):
+                hostname = packetDict['hostname']
+            if packetDict.has_key('dst_port'):
+                eport = packetDict['dst_port']
+
+            currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
                 result = currentResult
+                break
         return result == "pass"
     # TODO: You can add more methods as you want.
 
@@ -147,6 +156,7 @@ class Firewall:
             else:
                 self.rules.append(Rule(tokens[0], tokens[1], tokens[2], tokens[3]))
         ruleFile.close()
+        self.rules.reverse()
 
 class Rule:
 
@@ -157,7 +167,7 @@ class Rule:
         self.port = port
 
     def getPacketResult(self, ptype, addr, eport, hostName):
-        if packetType == "dns":
+        if self.packetType == "dns":
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
                 return self.passDrop
             else:
