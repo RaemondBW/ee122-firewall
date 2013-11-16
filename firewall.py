@@ -156,6 +156,7 @@ class Rule:
         self.ipAddress = ipAddress
         self.port = port
 
+
     def getPacketResult(self, ptype, addr, eport, hostName):
         if ptype == "dns":
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
@@ -163,7 +164,7 @@ class Rule:
             else:
                 if len(self.ipAddress) == 1:
                     return self.passDrop
-                elif self.ipAddress[1:] == hostName[(len(hostName)-len(self.ipAddress)-1):]:
+                elif self.ipAddress[1:] == hostName[-len(self.ipAddress[1:]):]:
                     return self.passDrop
                 else:
                     return "nomatch"
