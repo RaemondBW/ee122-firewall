@@ -37,8 +37,15 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        print pkt
-        print pkt_dir
+        # print pkt
+        #print pkt_dir
+        tcp_src, = struct.unpack('!H', pkt[0:2])
+        tcp_dst, = struct.unpack('!H', pkt[2:4])
+        ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
+
+        print tcp_src
+        print tcp_dst
+
         src_ip = pkt[12:16]
         dst_ip = pkt[16:20]
         ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
@@ -48,16 +55,64 @@ class Firewall:
         else:
             dir_str = 'outgoing'
 
-        print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
-                socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
+
+        #print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
+        #        socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
 
         # ... and simply allow the packet.
         if pkt_dir == PKT_DIR_INCOMING:# and self.passPacket(passDrop, packetType, ipAddress, port):
             self.iface_int.send_ip_packet(pkt)
         elif pkt_dir == PKT_DIR_OUTGOING:# and self.passPacket(passDrop, packetType, ipAddress, port):
             self.iface_ext.send_ip_packet(pkt)
-        import sys
-        sys.exit()
+
+    def packetType(self, pkt, offset):
+        protocol, = struct.unpack('!B', pkt[9])
+        packetDict = dict()
+        if protocol == 6:
+            packetDict = {"ptype":"tcp", "src_port": struct.unpack('!H', pkt[offset:offset+2])[0], "dst_port": struct.unpack('!H', pkt[offset+2:offset+4])[0]}
+        elif protocol == 17:
+            dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
+            src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
+            dns = isDNS(pkt, offset)
+            if dns:
+                packetDict = {"ptype":"dns", "hostname":dns}
+            else:
+                packetDict = {"ptype":"udp", "dst_port":dst_port}
+
+        elif protocol == 1:
+            packetDict = {"ptype":"icmp", "type": struct.unpack('!B', pkt[offset])}
+        else:
+            return None
+
+    def isDNS(self, pkt, offset):
+        dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
+        if dst_port != 53:
+            return False
+        else:
+            dnsOffset = offset + 8
+            qdcount = struct.unpack('!H', pkt[dnsOffset+4:dnsOffset+6])[0]
+            if qdcount != 1:
+                return False
+            else:
+                pkt = pkt[offset+12:]
+                remainingChars, = struct.unpack('!B',pkt[0])
+                domainName = ""
+                while remainingChars > 0:
+                    domainPart = ""
+                    for _ in range(remainingChars):
+                        domainPart += struct.unpack('!H',pkt[:2])[0].decode('hex')
+                        pkt = pkt[2:]
+                    domainName += domainPart + "."
+                    remainingChars, = int(struct.unpack('!H',pkt[0]),16)
+                domainName = domainName[:-1]
+
+                qType = struct.unpack('!H',pkt[1:3])
+                qClass = struct.unpack('!H', pkt[3:5])
+                if (qType == 1 or qType == 28) and qClass == 1:
+                    return domainName
+                return False
+
+            
 
     def passPacket(self, passDrop, packetType, ipAddress, port):
         result = "pass"
@@ -73,7 +128,7 @@ class Firewall:
         ruleFile = open(file)
         for line in ruleFile.readlines():
             tokens = line.split()
-            print tokens
+            #print tokens
             if len(tokens) == 0:
                 pass
             elif tokens[0] == "%":
@@ -126,7 +181,7 @@ class Rule:
                     eportmatch = True
                 elif "-" in self.port:
                     r = self.port.split("-")
-                    eportmatch = eport in range(int(r[0]),int(r[1]))
+                    eportmatch = eport in range(int(r[0]),int(r[1])+1)
                 else:
                     eportmatch = (self.port == eport)
 
