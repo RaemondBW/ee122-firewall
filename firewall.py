@@ -37,15 +37,10 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        # print pkt
-        #print pkt_dir
         tcp_src, = struct.unpack('!H', pkt[0:2])
         tcp_dst, = struct.unpack('!H', pkt[2:4])
 
         ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
-
-        # print tcp_src
-        # print tcp_dst
 
         src_ip = pkt[12:16]
         dst_ip = socket.inet_ntoa(pkt[16:20])
@@ -61,7 +56,6 @@ class Firewall:
         # elif pkt_dir == PKT_DIR_OUTGOING: #and self.passPacket(pktStuff,dst_ip):
         #     self.iface_ext.send_ip_packet(pkt)
 
-        # print "IP HEADER : ", ip_headerLen
         pktStuff = self.packetType(pkt,ip_headerLen)
         if pktStuff == None:
             if pkt_dir == PKT_DIR_INCOMING:
@@ -102,21 +96,16 @@ class Firewall:
     def isDNS(self, pkt, offset):
         dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
         if dst_port != 53:
-            print ("port not equal 53")
             return False
         else:
             dnsOffset = offset + 8
-            print struct.unpack('!B', pkt[dnsOffset])[0]
             qdcount = struct.unpack('!H', pkt[dnsOffset+4:dnsOffset+6])[0]
-            print "qdcount : " + str(qdcount)
             if qdcount != 1:
                 return False
             else:
                 index = dnsOffset + 12
                 #pkt = pkt[offset+13:]
-                #print struct.unpack('!B', pkt[0])[0]
                 remainingChars = struct.unpack('!B',pkt[index])[0]
-                # print "remaining chars : " + str(remainingChars)
                 domainName = ""
                 while remainingChars > 0:
                     domainPart = ""
@@ -128,14 +117,10 @@ class Firewall:
                     remainingChars = struct.unpack('!B',pkt[index])[0]
                 domainName = domainName[:-1]
 
-                # print "domain name : " + domainName
                 qType = struct.unpack('!H',pkt[index+1:index+3])[0]
                 qClass = struct.unpack('!H', pkt[index+3:index+5])[0]
-                print ("qType : ", qType)
-                print ("qClass : ", qClass)
                 if (qType == 1 or qType == 28) and qClass == 1:
                     return domainName
-                print ("returning false at the end")
                 return False
 
 
@@ -147,9 +132,6 @@ class Firewall:
                 hostname = packetDict['hostname']
             if packetDict.has_key('dst_port'):
                 eport = packetDict['dst_port']
-            # print packetDict
-            # print hostname
-            # print eport
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
                 return currentResult == "pass" #result = currentResult
@@ -161,7 +143,6 @@ class Firewall:
         ruleFile = open(file)
         for line in ruleFile.readlines():
             tokens = line.split()
-            #print tokens
             if len(tokens) == 0:
                 pass
             elif tokens[0] == "%":
@@ -202,7 +183,6 @@ class Rule:
                 if self.ipAddress == "any":
                     eipmatch = True
                 elif len(self.ipAddress) == 2 and isInCountry(self.ipAddress, addr):
-                    print "IN AUSTRALIA"
                     eipmatch = True
                 elif "/" in self.ipAddress:
                     ipAddr = self.ipAddress.split("/")[0]
@@ -210,7 +190,6 @@ class Rule:
                     eipmatch = self.prefixMask(addr, ipAddr, prefix)
                 else:
                     eipmatch = (addr == self.ipAddress)
-                print "eipmatch: " + str(eipmatch)
 
                 # external port matching
                 if self.port == "any":
@@ -223,7 +202,6 @@ class Rule:
 
                 # 
                 if eipmatch and eportmatch:
-                    print "result: " + self.passDrop
                     return self.passDrop
                 else:
                     return "nomatch"
