@@ -61,7 +61,7 @@ class Firewall:
                 self.iface_int.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_OUTGOING:
                 self.iface_ext.send_ip_packet(pkt)
-        elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip):
+        elif pkt_dir == PKT_DIR_INCOMING:# and self.passPacket(pktStuff,src_ip):
             self.iface_int.send_ip_packet(pkt)
         elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
             self.iface_ext.send_ip_packet(pkt)
@@ -70,11 +70,6 @@ class Firewall:
         #print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
         #        socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
 
-        # ... and simply allow the packet.
-        # if pkt_dir == PKT_DIR_INCOMING:
-        #     self.iface_int.send_ip_packet(pkt)
-        # elif pkt_dir == PKT_DIR_OUTGOING:
-        #     self.iface_ext.send_ip_packet(pkt)
 
     def packetType(self, pkt, offset):
         protocol, = struct.unpack('!B', pkt[9])
@@ -95,6 +90,7 @@ class Firewall:
         else:
             return None
         return packetDict
+
 
     def isDNS(self, pkt, offset):
         dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
@@ -133,7 +129,9 @@ class Firewall:
                 hostname = packetDict['hostname']
             if packetDict.has_key('dst_port'):
                 eport = packetDict['dst_port']
-
+            print packetDict
+            print hostname
+            print eport
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
                 result = currentResult
