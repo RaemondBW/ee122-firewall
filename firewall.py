@@ -48,7 +48,7 @@ class Firewall:
         # print tcp_dst
 
         src_ip = pkt[12:16]
-        dst_ip = pkt[16:20]
+        dst_ip = socket.inet_ntoa(pkt[16:20])
         ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
         
         if pkt_dir == PKT_DIR_INCOMING:
@@ -202,6 +202,7 @@ class Rule:
                 if self.ipAddress == "any":
                     eipmatch = True
                 elif len(self.ipAddress) == 2 and isInCountry(self.ipAddress, addr):
+                    print "IN AUSTRALIA"
                     eipmatch = True
                 elif "/" in self.ipAddress:
                     ipAddr = self.ipAddress.split("/")[0]
@@ -209,6 +210,7 @@ class Rule:
                     eipmatch = self.prefixMask(addr, ipAddr, prefix)
                 else:
                     eipmatch = (addr == self.ipAddress)
+                print "eipmatch: " + str(eipmatch)
 
                 # external port matching
                 if self.port == "any":
@@ -221,6 +223,7 @@ class Rule:
 
                 # 
                 if eipmatch and eportmatch:
+                    print "result: " + self.passDrop
                     return self.passDrop
                 else:
                     return "nomatch"
@@ -243,31 +246,17 @@ class Rule:
         mask = 32 - prefix
         num = num >> mask
         numToMatch = numToMatch >> mask
-        return num == numToMatch
-        
-        
-        
+        return num == numToMatch  
         
         
 def isInCountry(countryCode, ipAddress):
+    countryCode = countryCode.upper()
     if geoTable.has_key(countryCode):
-        countryCodes = geoTable[countryCode]
-        currentChoice = len(countryCode)//2
-        lowerBound, upperBound = countryCodes[currentChoice]
-        while len(countryCodes) > 0:
-            relation = getRelation(currentChoice, lowerBound, upperBound)
-            if relation == "<":
-                countryCodes = countryCodes[:currentChoice]
-                currentChoice = len(countryCodes)//2
-            elif relation == ">":
-                countryCodes = countryCodes[currentChoice+1:]
-                currentChocie = len(countryCodes)//2
-            elif relation == "=":
+        for lowerBound,upperBound in geoTable[countryCode]:
+            if getRelation(ipAddress,lowerBound,upperBound) == "=":
                 return True
-        return False
+    return False
 
-    else:
-        return False
 
 def getRelation(ipAddress, lowerBound, upperBound):
     ipAddrParts = ipAddress.split(".")
@@ -276,7 +265,7 @@ def getRelation(ipAddress, lowerBound, upperBound):
     for i in range(len(ipAddrParts)):
         if int(ipAddrParts[i]) < int(lowerBoundParts[i]):
             return "<"
-        elif int(ipAddrParts[i]) > int(upperBoundsParts[i]):
+        elif int(ipAddrParts[i]) > int(upperBoundParts[i]):
             return ">"
     return "="
     
