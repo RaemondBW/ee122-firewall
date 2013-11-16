@@ -41,10 +41,11 @@ class Firewall:
         #print pkt_dir
         tcp_src, = struct.unpack('!H', pkt[0:2])
         tcp_dst, = struct.unpack('!H', pkt[2:4])
+
         ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
 
-        print tcp_src
-        print tcp_dst
+        # print tcp_src
+        # print tcp_dst
 
         src_ip = pkt[12:16]
         dst_ip = pkt[16:20]
@@ -55,6 +56,12 @@ class Firewall:
         else:
             dir_str = 'outgoing'
 
+        # if pkt_dir == PKT_DIR_INCOMING:# and self.passPacket(pktStuff,src_ip):
+        #     self.iface_int.send_ip_packet(pkt)
+        # elif pkt_dir == PKT_DIR_OUTGOING: #and self.passPacket(pktStuff,dst_ip):
+        #     self.iface_ext.send_ip_packet(pkt)
+
+        # print "IP HEADER : ", ip_headerLen
         pktStuff = self.packetType(pkt,ip_headerLen)
         if pktStuff == None:
             if pkt_dir == PKT_DIR_INCOMING:
@@ -95,29 +102,40 @@ class Firewall:
     def isDNS(self, pkt, offset):
         dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
         if dst_port != 53:
+            print ("port not equal 53")
             return False
         else:
             dnsOffset = offset + 8
+            print struct.unpack('!B', pkt[dnsOffset])[0]
             qdcount = struct.unpack('!H', pkt[dnsOffset+4:dnsOffset+6])[0]
+            print "qdcount : " + str(qdcount)
             if qdcount != 1:
                 return False
             else:
-                pkt = pkt[offset+12:]
-                remainingChars, = struct.unpack('!B',pkt[0])
+                index = dnsOffset + 12
+                #pkt = pkt[offset+13:]
+                #print struct.unpack('!B', pkt[0])[0]
+                remainingChars = struct.unpack('!B',pkt[index])[0]
+                # print "remaining chars : " + str(remainingChars)
                 domainName = ""
                 while remainingChars > 0:
                     domainPart = ""
-                    for _ in range(remainingChars):
-                        domainPart += struct.unpack('!H',pkt[:2])[0].decode('hex')
-                        pkt = pkt[2:]
+                    for i in range(1,remainingChars+1):
+                        intg = struct.unpack('!B',pkt[index+i])[0]
+                        domainPart += str(unichr(intg))
                     domainName += domainPart + "."
-                    remainingChars, = int(struct.unpack('!H',pkt[0]),16)
+                    index += remainingChars + 1
+                    remainingChars = struct.unpack('!B',pkt[index])[0]
                 domainName = domainName[:-1]
 
-                qType = struct.unpack('!H',pkt[1:3])
-                qClass = struct.unpack('!H', pkt[3:5])
+                # print "domain name : " + domainName
+                qType = struct.unpack('!H',pkt[index+1:index+3])[0]
+                qClass = struct.unpack('!H', pkt[index+3:index+5])[0]
+                print ("qType : ", qType)
+                print ("qClass : ", qClass)
                 if (qType == 1 or qType == 28) and qClass == 1:
                     return domainName
+                print ("returning false at the end")
                 return False
 
 
@@ -129,14 +147,13 @@ class Firewall:
                 hostname = packetDict['hostname']
             if packetDict.has_key('dst_port'):
                 eport = packetDict['dst_port']
-            print packetDict
-            print hostname
-            print eport
+            # print packetDict
+            # print hostname
+            # print eport
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
-                result = currentResult
-                break
-        return result == "pass"
+                return currentResult == "pass" #result = currentResult
+        return True
     # TODO: You can add more methods as you want.
 
 # TODO: You may want to add more classes/functions as well.
@@ -165,7 +182,7 @@ class Rule:
         self.port = port
 
     def getPacketResult(self, ptype, addr, eport, hostName):
-        if self.packetType == "dns":
+        if ptype == "dns":
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
                 return self.passDrop
             else:
