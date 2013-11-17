@@ -37,30 +37,33 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        tcp_src, = struct.unpack('!H', pkt[0:2])
-        tcp_dst, = struct.unpack('!H', pkt[2:4])
+        try:
+            tcp_src, = struct.unpack('!H', pkt[0:2])
+            tcp_dst, = struct.unpack('!H', pkt[2:4])
 
-        ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
+            ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
 
-        src_ip = pkt[12:16]
-        dst_ip = socket.inet_ntoa(pkt[16:20])
-        ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
-        
-        if pkt_dir == PKT_DIR_INCOMING:
-            dir_str = 'incoming'
-        else:
-            dir_str = 'outgoing'
-
-        pktStuff = self.packetType(pkt,ip_headerLen)
-        if pktStuff == None:
+            src_ip = pkt[12:16]
+            dst_ip = socket.inet_ntoa(pkt[16:20])
+            ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
+            
             if pkt_dir == PKT_DIR_INCOMING:
+                dir_str = 'incoming'
+            else:
+                dir_str = 'outgoing'
+
+            pktStuff = self.packetType(pkt,ip_headerLen)
+            if pktStuff == None:
+                if pkt_dir == PKT_DIR_INCOMING:
+                    self.iface_int.send_ip_packet(pkt)
+                elif pkt_dir == PKT_DIR_OUTGOING:
+                    self.iface_ext.send_ip_packet(pkt)
+            elif pkt_dir == PKT_DIR_INCOMING:
                 self.iface_int.send_ip_packet(pkt)
-            elif pkt_dir == PKT_DIR_OUTGOING:
+            elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
                 self.iface_ext.send_ip_packet(pkt)
-        elif pkt_dir == PKT_DIR_INCOMING:
-            self.iface_int.send_ip_packet(pkt)
-        elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
-            self.iface_ext.send_ip_packet(pkt)
+        except:
+            pass
 
 
         # print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
