@@ -1,0 +1,4 @@
+As the lossrate increases, the TCP throughput decreeases almost linearly.
+The bar graph did not look quite linear as the internet we used was not quite stable.
+Since the firewall is dropping packets randomly with a probability of loss rate,
+TCP is treating the situation as having packets lost in transfer.
