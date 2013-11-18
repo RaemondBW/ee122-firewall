@@ -11,6 +11,8 @@ class Firewall:
         self.timer = timer
         self.iface_int = iface_int
         self.iface_ext = iface_ext
+        #self.logfile = open("log.txt", "w+")
+        #self.logfile.write("Packet Length, Direction, ipid, src_ip, dst_ip")
 
         print 'bypass mode!'
 
@@ -25,8 +27,6 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # The example code here prints out the source/destination IP addresses,
         # which is unnecessary for your submission.
-        print pkt
-        print pkt_dir
         src_ip = pkt[12:16]
         dst_ip = pkt[16:20]
         ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
@@ -38,6 +38,8 @@ class Firewall:
 
         print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
                 socket.inet_ntoa(src_ip), socket.inet_ntoa(dst_ip))
+        #self.logfile.write(str(len(pkt))+","+dir_str+","+str(ipid)+","+socket.inet_ntoa(src_ip)+","+socket.inet_ntoa(dst_ip)+"\n")
+        #self.logfile.flush()
 
         # ... and simply allow the packet.
         if pkt_dir == PKT_DIR_INCOMING:

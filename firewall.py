@@ -10,7 +10,7 @@ import time
 # You must NOT use any 3rd-party libraries, though.
 
 geoTable = {}
-geoIpdb = open("geoipdbempty.txt")
+geoIpdb = open("geoipdb.txt")
 for line in geoIpdb.readlines():
     startIP, endIP, countryCode = line.split()
     if countryCode not in geoTable.keys():

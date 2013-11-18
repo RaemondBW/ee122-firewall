@@ -1,0 +1,8 @@
+How long was the measurement period? How many packets did you measure in total?
+30 minutes. I measured the size of 77,926 Packets.
+
+What did you mostly do during the period?
+During those 30 minutes I watched a long video on youtube and surfed around the web, particularly links on Hacker News.
+
+What does the distribution look like? Why does it show such a distribution?
+The distribution (see bw1.png) is dominated by small packets (1-100B) or large packets(1451-1500B). I think is largely due to transmitting and requests to youtube. The packets coming from youtube were large inorder to accompany the streaming video.
