@@ -84,7 +84,7 @@ class Firewall:
             src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
             dns = self.isDNS(pkt, offset)
             if dns:
-                packetDict = {"ptype":"dns", "hostname":dns}
+                packetDict = {"ptype":"dns", "hostname":dns, "dst_port":dst_port}
             else:
                 packetDict = {"ptype":"udp", "dst_port":dst_port}
 
@@ -165,6 +165,7 @@ class Rule:
 
 
     def getPacketResult(self, ptype, addr, eport, hostName):
+        print str(self.packetType) + "," + self.passDrop
         if ptype == "dns":
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
                 return self.passDrop
@@ -176,6 +177,9 @@ class Rule:
                 else:
                     return "nomatch"
             else:
+                #If the packet is a dns packet, it should respond to udp rules
+                if self.packetType == "udp" and (self.port == "any" or self.port == eport):
+                    return self.passDrop
                 return "nomatch"
         else: # protocols
             if ptype == self.packetType:
