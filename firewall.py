@@ -4,6 +4,7 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import socket
 import struct
 import time
+import random
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -25,11 +26,13 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
         self.rules = []
-        # TODO: Load the firewall rules (from rule_filename) here.
-        self.parseRules(config['rule'])
+        self.lossrate = 0
+        if config.has_key('rule'):
+            self.parseRules(config['rule'])
+        if config.has_key('loss'):
+            self.lossrate = int(config['loss'])
 
     def handle_timer(self):
-        # TODO: For the timer feature, refer to bypass.py
         # print '%s: I am still alive' % time.ctime()
         self.timer.schedule(time.time() + 10.0)
 
@@ -38,30 +41,31 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
         try:
-            tcp_src, = struct.unpack('!H', pkt[0:2])
-            tcp_dst, = struct.unpack('!H', pkt[2:4])
+            if self.lossrate == 0 or random.uniform(1,100) > self.lossrate:
+                tcp_src, = struct.unpack('!H', pkt[0:2])
+                tcp_dst, = struct.unpack('!H', pkt[2:4])
 
-            ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
+                ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
 
-            src_ip = pkt[12:16]
-            dst_ip = socket.inet_ntoa(pkt[16:20])
-            ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
-            
-            if pkt_dir == PKT_DIR_INCOMING:
-                dir_str = 'incoming'
-            else:
-                dir_str = 'outgoing'
-
-            pktStuff = self.packetType(pkt,ip_headerLen)
-            if pktStuff == None:
+                src_ip = pkt[12:16]
+                dst_ip = socket.inet_ntoa(pkt[16:20])
+                ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
+                
                 if pkt_dir == PKT_DIR_INCOMING:
+                    dir_str = 'incoming'
+                else:
+                    dir_str = 'outgoing'
+
+                pktStuff = self.packetType(pkt,ip_headerLen)
+                if pktStuff == None:
+                    if pkt_dir == PKT_DIR_INCOMING:
+                        self.iface_int.send_ip_packet(pkt)
+                    elif pkt_dir == PKT_DIR_OUTGOING:
+                        self.iface_ext.send_ip_packet(pkt)
+                elif pkt_dir == PKT_DIR_INCOMING:
                     self.iface_int.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_OUTGOING:
+                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
                     self.iface_ext.send_ip_packet(pkt)
-            elif pkt_dir == PKT_DIR_INCOMING:
-                self.iface_int.send_ip_packet(pkt)
-            elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
-                self.iface_ext.send_ip_packet(pkt)
         except:
             pass
 
