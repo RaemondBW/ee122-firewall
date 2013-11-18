@@ -47,7 +47,7 @@ class Firewall:
 
                 ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
 
-                src_ip = pkt[12:16]
+                src_ip = socket.inet_ntoa(pkt[12:16])
                 dst_ip = socket.inet_ntoa(pkt[16:20])
                 ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
                 
@@ -62,7 +62,7 @@ class Firewall:
                         self.iface_int.send_ip_packet(pkt)
                     elif pkt_dir == PKT_DIR_OUTGOING:
                         self.iface_ext.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_INCOMING:
+                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip):
                     self.iface_int.send_ip_packet(pkt)
                 elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
                     self.iface_ext.send_ip_packet(pkt)
@@ -70,8 +70,8 @@ class Firewall:
             pass
 
 
-        # print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
-        #        socket.inet_ntoa(src_ip), dst_ip)
+        print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
+               src_ip, dst_ip)
 
 
     def packetType(self, pkt, offset):
