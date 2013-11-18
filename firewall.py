@@ -169,7 +169,6 @@ class Rule:
 
 
     def getPacketResult(self, ptype, addr, eport, hostName):
-        print self.packetType + "," + self.passDrop
         if ptype == "dns":
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
                 return self.passDrop
@@ -182,7 +181,7 @@ class Rule:
                     return "nomatch"
             else:
                 #If the packet is a dns packet, it should respond to udp rules
-                if self.packetType == "udp":# and (self.port == "any" or self.port == eport):
+                if self.packetType == "udp":
                     eipmatch = False
                     eportmatch = False
                     # external ip addr matching
