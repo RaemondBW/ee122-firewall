@@ -165,7 +165,7 @@ class Rule:
 
 
     def getPacketResult(self, ptype, addr, eport, hostName):
-        print str(self.packetType) + "," + self.passDrop
+        print self.packetType + "," + self.passDrop
         if ptype == "dns":
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
                 return self.passDrop
@@ -178,8 +178,35 @@ class Rule:
                     return "nomatch"
             else:
                 #If the packet is a dns packet, it should respond to udp rules
-                if self.packetType == "udp" and (self.port == "any" or self.port == eport):
-                    return self.passDrop
+                if self.packetType == "udp":# and (self.port == "any" or self.port == eport):
+                    eipmatch = False
+                    eportmatch = False
+                    # external ip addr matching
+                    if self.ipAddress == "any":
+                        eipmatch = True
+                    elif len(self.ipAddress) == 2 and isInCountry(self.ipAddress, addr):
+                        eipmatch = True
+                    elif "/" in self.ipAddress:
+                        ipAddr = self.ipAddress.split("/")[0]
+                        prefix = self.ipAddress.split("/")[1]
+                        eipmatch = self.prefixMask(addr, ipAddr, prefix)
+                    else:
+                        eipmatch = (addr == self.ipAddress)
+
+                    # external port matching
+                    if self.port == "any":
+                        eportmatch = True
+                    elif "-" in self.port:
+                        r = self.port.split("-")
+                        eportmatch = eport in range(int(r[0]),int(r[1])+1)
+                    else:
+                        eportmatch = (self.port == eport)
+
+                    # 
+                    if eipmatch and eportmatch:
+                        return self.passDrop
+                    return "nomatch"
+                    
                 return "nomatch"
         else: # protocols
             if ptype == self.packetType:
