@@ -200,7 +200,7 @@ class Rule:
                         r = self.port.split("-")
                         eportmatch = eport in range(int(r[0]),int(r[1])+1)
                     else:
-                        eportmatch = (self.port == eport)
+                        eportmatch = (int(self.port) == eport)
 
                     # 
                     if eipmatch and eportmatch:
@@ -233,7 +233,7 @@ class Rule:
                     r = self.port.split("-")
                     eportmatch = eport in range(int(r[0]),int(r[1])+1)
                 else:
-                    eportmatch = (self.port == eport)
+                    eportmatch = (int(self.port) == eport)
 
                 # 
                 if eipmatch and eportmatch:
