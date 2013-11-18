@@ -62,9 +62,9 @@ class Firewall:
                         self.iface_int.send_ip_packet(pkt)
                     elif pkt_dir == PKT_DIR_OUTGOING:
                         self.iface_ext.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip):
+                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, 'incoming'):
                     self.iface_int.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip):
+                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, 'outgoing'):
                     self.iface_ext.send_ip_packet(pkt)
         except:
             pass
@@ -84,9 +84,9 @@ class Firewall:
             src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
             dns = self.isDNS(pkt, offset)
             if dns:
-                packetDict = {"ptype":"dns", "hostname":dns, "dst_port":dst_port}
+                packetDict = {"ptype":"dns", "hostname":dns, "dst_port":dst_port, "src_port":src_port}
             else:
-                packetDict = {"ptype":"udp", "dst_port":dst_port}
+                packetDict = {"ptype":"udp", "dst_port":dst_port, "src_port":src_port}
 
         elif protocol == 1:
             packetDict = {"ptype":"icmp", "type": struct.unpack('!B', pkt[offset])}
@@ -125,14 +125,18 @@ class Firewall:
                 return False
 
 
-    def passPacket(self, packetDict, ip):
+    def passPacket(self, packetDict, ip, direction):
         for rule in self.rules:
             hostname = None
             eport = None
             if packetDict.has_key('hostname'):
                 hostname = packetDict['hostname']
-            if packetDict.has_key('dst_port'):
+            if packetDict['ptype'] == 'icmp':
+                eport = packetDict['type']
+            elif direction == 'outgoing' and packetDict.has_key('dst_port'):
                 eport = packetDict['dst_port']
+            elif direction == 'incoming' and packetDict.has_key('src_port'):
+                eport = packetDict['src_port']
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
                 return currentResult == "pass" #result = currentResult
