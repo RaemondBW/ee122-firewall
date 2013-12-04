@@ -156,18 +156,19 @@ class Firewall:
 
         # I did this to make a deep copy of the packet and cut off unnecessary options and tcp data. 
         # Not sure if it should be done this way.
-        rst_pkt = pkt[:40]
+        ip_len = int(str(int(pkt[0],16) & 0b1111), 16)
+        rst_pkt = pkt[:ip_len+20]
 
         # -------------------------------
         # fix the ip header and checksum
         # -------------------------------
         
-        # checksum = 0x0000
-        rst_pkt[10:12] = struct.pack('!H',0x0000)
-        
         # swap the src and dst ips
         rst_pkt[12:16] = pkt[16:20]
         rst_pkt[16:20] = pkt[12:16]
+
+        # set checksum = 0x0000
+        rst_pkt[10:12] = struct.pack('!H',0x0000)
 
         # calculate ipchecksum
         rst_pkt[10:12] = struct.pack('!H', hex(self.ip_checksum(pkt)))
@@ -177,10 +178,14 @@ class Firewall:
         # ---------------------------------
 
         # swap the TCP ports
-        rst_pkt[0:2] = pkt[2:4]
-        rst_pkt[2:4] = pkt[0:2]
+        rst_pkt[ip_len : ip_len+2] = pkt[ip_len+2 : ip_len+4]
+        rst_pkt[ip_len + 2 : ip_len + 4] = pkt[ip_len : ip_len + 2]
         
         # change TCP ack number
+        rst_pkt[ip_len+8 : ip_len+12] = struct.pack('!L', struct.unpack('!L', pkt[ip_len+4 : ip_len+8])[0] + 1)
+
+        # set the flag to RST
+        rst_pkt[ip_len+13] = struct.pack('!B', 0x04)
 
         # change the TCP checksum
 
@@ -199,7 +204,7 @@ class Firewall:
         total = total ^ 0xFFFF
         return total
 
-    def tcp_check(self, pkt):
+    def tcp_checksum(self, pkt):
 
         pass
 
