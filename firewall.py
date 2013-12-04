@@ -171,7 +171,7 @@ class Firewall:
         rst_pkt[10:12] = struct.pack('!H',0x0000)
 
         # calculate ipchecksum
-        rst_pkt[10:12] = struct.pack('!H', hex(self.ip_checksum(pkt)))
+        rst_pkt[10:12] = struct.pack('!H', hex(self.ip_checksum(rst_pkt)))
 
         # ---------------------------------
         # fix the tcp header and checksum
@@ -187,8 +187,14 @@ class Firewall:
         # set the flag to RST
         rst_pkt[ip_len+13] = struct.pack('!B', 0x04)
 
-        # change the TCP checksum
+        # TCP checksum = 0x0000
+        rst_pkt[ip_len+16:ip_len+18] = struct.pack('!H', 0x0000)
 
+        # set the offset to 5
+        rst_pkt[ip_len+12] = struct.pack('!B', 0x50)
+
+        # calculate tcp_checksum
+        rst_pkt[ip_len+16:ip_len+18] = tcp_checksum(rst_pkt)
 
         return rst_pkt
 
@@ -205,7 +211,7 @@ class Firewall:
         return total
 
     def tcp_checksum(self, pkt):
-
+        ip_src = struct.unpack('!L', )
         pass
 
 # TODO: You may want to add more classes/functions as well.
