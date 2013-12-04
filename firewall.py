@@ -43,39 +43,39 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        try:
-            if self.lossrate == 0 or random.uniform(1,100) > self.lossrate:
-                tcp_src, = struct.unpack('!H', pkt[0:2])
-                tcp_dst, = struct.unpack('!H', pkt[2:4])
+        #try:
+        if self.lossrate == 0 or random.uniform(1,100) > self.lossrate:
+            tcp_src, = struct.unpack('!H', pkt[0:2])
+            tcp_dst, = struct.unpack('!H', pkt[2:4])
 
-                ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
+            ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
 
-                src_ip = socket.inet_ntoa(pkt[12:16])
-                dst_ip = socket.inet_ntoa(pkt[16:20])
-                ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
-                
+            src_ip = socket.inet_ntoa(pkt[12:16])
+            dst_ip = socket.inet_ntoa(pkt[16:20])
+            ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
+            
+            if pkt_dir == PKT_DIR_INCOMING:
+                dir_str = 'incoming'
+            else:
+                dir_str = 'outgoing'
+
+            pktStuff = self.packetType(pkt,ip_headerLen)
+            print pktStuff
+            if pktStuff == None:
                 if pkt_dir == PKT_DIR_INCOMING:
-                    dir_str = 'incoming'
-                else:
-                    dir_str = 'outgoing'
-
-                pktStuff = self.packetType(pkt,ip_headerLen)
-                print pktStuff
-                if pktStuff == None:
-                    if pkt_dir == PKT_DIR_INCOMING:
-                        self.iface_int.send_ip_packet(pkt)
-                    elif pkt_dir == PKT_DIR_OUTGOING:
-                        self.iface_ext.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
-                    pktStuff['src_ip'] = src_ip
-                    pktStuff['dst_ip'] = dst_ip
                     self.iface_int.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
-                    pktStuff['src_ip'] = src_ip
-                    pktStuff['dst_ip'] = dst_ip
+                elif pkt_dir == PKT_DIR_OUTGOING:
                     self.iface_ext.send_ip_packet(pkt)
-        except:
-            pass
+            elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
+                pktStuff['src_ip'] = src_ip
+                pktStuff['dst_ip'] = dst_ip
+                self.iface_int.send_ip_packet(pkt)
+            elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
+                pktStuff['src_ip'] = src_ip
+                pktStuff['dst_ip'] = dst_ip
+                self.iface_ext.send_ip_packet(pkt)
+        #except:
+        #    pass
 
 
         print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
@@ -90,8 +90,9 @@ class Firewall:
         elif protocol == 17:
             dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
             src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
-            dns,queryID = self.isDNS(pkt, offset)
-            if dns:
+            dnsResult = self.isDNS(pkt, offset)
+            if dnsResult:
+                dns,queryID = dnsResult
                 packetDict = {"ptype":"dns", "hostname":dns, "dst_port":dst_port, "src_port":src_port, "queryID":queryID}
             else:
                 packetDict = {"ptype":"udp", "dst_port":dst_port, "src_port":src_port}
@@ -130,7 +131,7 @@ class Firewall:
                 qType = struct.unpack('!H',pkt[index+1:index+3])[0]
                 qClass = struct.unpack('!H', pkt[index+3:index+5])[0]
                 if (qType == 1 or qType == 28) and qClass == 1:
-                    return domainName, queryID
+                    return (domainName, queryID)
                 return False
 
 
