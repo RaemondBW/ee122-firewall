@@ -177,6 +177,8 @@ class Firewall:
         # ---------------------------------
 
         # swap the TCP ports
+        rst_pkt[0:2] = pkt[2:4]
+        rst_pkt[2:4] = pkt[0:2]
         
         # change TCP ack number
 
