@@ -183,7 +183,7 @@ class Firewall:
         rst_pkt[10:12] = struct.pack('!H',0x0000)
 
         # calculate ipchecksum
-        rst_pkt[10:12] = struct.pack('!H', hex(self.ip_checksum(rst_pkt)))
+        rst_pkt[10:12] = struct.pack('!H', self.ip_checksum(rst_pkt))
 
         # ---------------------------------
         # fix the tcp header and checksum
@@ -206,7 +206,7 @@ class Firewall:
         rst_pkt[ip_len+12] = struct.pack('!B', 0x50)
 
         # calculate tcp_checksum
-        rst_pkt[ip_len+16:ip_len+18] = tcp_checksum(rst_pkt)
+        rst_pkt[ip_len+16:ip_len+18] = struct.pack('!H', tcp_checksum(rst_pkt))
 
         return rst_pkt
 
@@ -223,8 +223,35 @@ class Firewall:
         return total
 
     def tcp_checksum(self, pkt):
-        ip_src = struct.unpack('!L', )
-        pass
+        w = int(str(int(pkt[0],16) & 0b1111), 16)
+        ip_src = struct.unpack('!L', pkt[12:16])
+        ip_dst = struct.unpack('!L', pkt[16:20])
+
+        tcp_prot = 6
+        bitsleft = 20
+
+        total = 0
+
+        while bitsleft > 1:
+            total += struct.unpack('!H', pkt[w:w+2])[0]
+            w += 2
+            bitsleft -= 2
+        if bitsleft > 0:
+            total += struct.unpack('!B', pkt[w])[0]
+
+        # add pseudo header
+        total += struct.unpack('!L', src_addr)[0]
+        total += struct.unpack('!L', dest_addr)[0]
+        total += 20
+        total += tcp_protocol
+
+        total = (total >> 16) + (total & 0xFFFF)
+        total += (total >> 16)
+
+        total = total ^ 0xFFFF
+
+        return total
+
 
     def createDenyDNSResponse(hostName, packetID, sourcePort, destPort, sourceIP, destIP):
         #DNS QUERY RESPONSE STUFF
