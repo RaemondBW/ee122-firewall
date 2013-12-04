@@ -5,6 +5,7 @@ import socket
 import struct
 import time
 import random
+import copy
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -62,9 +63,9 @@ class Firewall:
                         self.iface_int.send_ip_packet(pkt)
                     elif pkt_dir == PKT_DIR_OUTGOING:
                         self.iface_ext.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, 'incoming'):
+                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
                     self.iface_int.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, 'outgoing'):
+                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
                     self.iface_ext.send_ip_packet(pkt)
         except:
             pass
@@ -125,7 +126,7 @@ class Firewall:
                 return False
 
 
-    def passPacket(self, packetDict, ip, direction):
+    def passPacket(self, packetDict, ip, pkt, direction):
         for rule in self.rules:
             hostname = None
             eport = None
@@ -144,12 +145,61 @@ class Firewall:
                     PORT = eport
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
                     s.connect((HOST,PORT))
-                    
+                    rst_packet = makeRSTpacket(pkt)
+
                     return False
                 else:
                     return currentResult == "pass" #result = currentResult
         return True
-    # TODO: You can add more methods as you want.
+
+    def makeRSTpacket(self, pkt):
+
+        # I did this to make a deep copy of the packet and cut off unnecessary options and tcp data. 
+        # Not sure if it should be done this way.
+        rst_pkt = pkt[:40]
+
+        # -------------------------------
+        # fix the ip header and checksum
+        # -------------------------------
+        
+        # checksum = 0x0000
+        rst_pkt[10:12] = struct.pack('!H',0x0000)
+        
+        # swap the src and dst ips
+        rst_pkt[12:16] = pkt[16:20]
+        rst_pkt[16:20] = pkt[12:16]
+
+        # calculate ipchecksum
+        rst_pkt[10:12] = struct.pack('!H', hex(self.ip_checksum(pkt)))
+
+        # ---------------------------------
+        # fix the tcp header and checksum
+        # ---------------------------------
+
+        # swap the TCP ports
+        
+        # change TCP ack number
+
+        # change the TCP checksum
+
+
+        return rst_pkt
+
+    def ip_checksum(self, pkt):
+        headerlen = int(str(int(pkt[0],16) & 0b1111), 16)
+        total = 0
+        counter = 0
+        while(counter < headerlen):
+            total += struct.unpack('!H', pkt[counter:counter+2])[0]
+            counter += 2
+        total = (total >> 16) + (total & 0xFFFF)
+        total += (total >> 16)
+        total = total ^ 0xFFFF
+        return total
+
+    def tcp_check(self, pkt):
+
+        pass
 
 # TODO: You may want to add more classes/functions as well.
     def parseRules(self, file):
