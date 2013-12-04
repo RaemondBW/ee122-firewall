@@ -5,6 +5,7 @@ import socket
 import struct
 import time
 import random
+import copy
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -64,11 +65,11 @@ class Firewall:
                         self.iface_int.send_ip_packet(pkt)
                     elif pkt_dir == PKT_DIR_OUTGOING:
                         self.iface_ext.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, 'incoming'):
+                elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
                     pktStuff['src_ip'] = src_ip
                     pktStuff['dst_ip'] = dst_ip
                     self.iface_int.send_ip_packet(pkt)
-                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, 'outgoing'):
+                elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
                     pktStuff['src_ip'] = src_ip
                     pktStuff['dst_ip'] = dst_ip
                     self.iface_ext.send_ip_packet(pkt)
@@ -132,7 +133,7 @@ class Firewall:
                 return False
 
 
-    def passPacket(self, packetDict, ip, direction):
+    def passPacket(self, packetDict, ip, pkt, direction):
         for rule in self.rules:
             hostname = None
             eport = None
@@ -156,11 +157,73 @@ class Firewall:
                         print "denying a dns query"
                         dnsPacket = createDenyDNSResponse(hostName,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
+
                     return False
                 else:
                     return currentResult == "pass" #result = currentResult
         return True
-    # TODO: You can add more methods as you want.
+
+    def makeRSTpacket(self, pkt):
+
+        # I did this to make a deep copy of the packet and cut off unnecessary options and tcp data. 
+        # Not sure if it should be done this way.
+        ip_len = int(str(int(pkt[0],16) & 0b1111), 16)
+        rst_pkt = pkt[:ip_len+20]
+
+        # -------------------------------
+        # fix the ip header and checksum
+        # -------------------------------
+        
+        # swap the src and dst ips
+        rst_pkt[12:16] = pkt[16:20]
+        rst_pkt[16:20] = pkt[12:16]
+
+        # set checksum = 0x0000
+        rst_pkt[10:12] = struct.pack('!H',0x0000)
+
+        # calculate ipchecksum
+        rst_pkt[10:12] = struct.pack('!H', hex(self.ip_checksum(rst_pkt)))
+
+        # ---------------------------------
+        # fix the tcp header and checksum
+        # ---------------------------------
+
+        # swap the TCP ports
+        rst_pkt[ip_len : ip_len+2] = pkt[ip_len+2 : ip_len+4]
+        rst_pkt[ip_len + 2 : ip_len + 4] = pkt[ip_len : ip_len + 2]
+        
+        # change TCP ack number
+        rst_pkt[ip_len+8 : ip_len+12] = struct.pack('!L', struct.unpack('!L', pkt[ip_len+4 : ip_len+8])[0] + 1)
+
+        # set the flag to RST
+        rst_pkt[ip_len+13] = struct.pack('!B', 0x04)
+
+        # TCP checksum = 0x0000
+        rst_pkt[ip_len+16:ip_len+18] = struct.pack('!H', 0x0000)
+
+        # set the offset to 5
+        rst_pkt[ip_len+12] = struct.pack('!B', 0x50)
+
+        # calculate tcp_checksum
+        rst_pkt[ip_len+16:ip_len+18] = tcp_checksum(rst_pkt)
+
+        return rst_pkt
+
+    def ip_checksum(self, pkt):
+        headerlen = int(str(int(pkt[0],16) & 0b1111), 16)
+        total = 0
+        counter = 0
+        while(counter < headerlen):
+            total += struct.unpack('!H', pkt[counter:counter+2])[0]
+            counter += 2
+        total = (total >> 16) + (total & 0xFFFF)
+        total += (total >> 16)
+        total = total ^ 0xFFFF
+        return total
+
+    def tcp_checksum(self, pkt):
+        ip_src = struct.unpack('!L', )
+        pass
 
     def createDenyDNSResponse(hostName, packetID, sourcePort, destPort, sourceIP, destIP):
         #DNS QUERY RESPONSE STUFF
