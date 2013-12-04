@@ -9,16 +9,18 @@ import random
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
 # You must NOT use any 3rd-party libraries, though.
-
-geoTable = {}
-geoIpdb = open("geoipdb.txt")
-for line in geoIpdb.readlines():
-    startIP, endIP, countryCode = line.split()
-    if countryCode not in geoTable.keys():
-        geoTable[countryCode] = [(startIP,endIP)]
-    else:
-        geoTable[countryCode] += [(startIP,endIP)]
-geoIpdb.close()
+try:
+    geoTable = {}
+    geoIpdb = open("geoipdb.txt")
+    for line in geoIpdb.readlines():
+        startIP, endIP, countryCode = line.split()
+        if countryCode not in geoTable.keys():
+            geoTable[countryCode] = [(startIP,endIP)]
+        else:
+            geoTable[countryCode] += [(startIP,endIP)]
+    geoIpdb.close()
+except:
+    pass
 
 class Firewall:
     def __init__(self, config, timer, iface_int, iface_ext):
@@ -63,8 +65,12 @@ class Firewall:
                     elif pkt_dir == PKT_DIR_OUTGOING:
                         self.iface_ext.send_ip_packet(pkt)
                 elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, 'incoming'):
+                    pktStuff['src_ip'] = src_ip
+                    pktStuff['dst_ip'] = dst_ip
                     self.iface_int.send_ip_packet(pkt)
                 elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, 'outgoing'):
+                    pktStuff['src_ip'] = src_ip
+                    pktStuff['dst_ip'] = dst_ip
                     self.iface_ext.send_ip_packet(pkt)
         except:
             pass
@@ -82,9 +88,9 @@ class Firewall:
         elif protocol == 17:
             dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
             src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
-            dns = self.isDNS(pkt, offset)
+            dns,queryID = self.isDNS(pkt, offset)
             if dns:
-                packetDict = {"ptype":"dns", "hostname":dns, "dst_port":dst_port, "src_port":src_port}
+                packetDict = {"ptype":"dns", "hostname":dns, "dst_port":dst_port, "src_port":src_port, "queryID":queryID}
             else:
                 packetDict = {"ptype":"udp", "dst_port":dst_port, "src_port":src_port}
 
@@ -108,6 +114,7 @@ class Firewall:
                 index = dnsOffset + 12
                 remainingChars = struct.unpack('!B',pkt[index])[0]
                 domainName = ""
+                queryID = pkt[dnsOffset:dnsOffset+2]
                 while remainingChars > 0:
                     domainPart = ""
                     for i in range(1,remainingChars+1):
@@ -121,7 +128,7 @@ class Firewall:
                 qType = struct.unpack('!H',pkt[index+1:index+3])[0]
                 qClass = struct.unpack('!H', pkt[index+3:index+5])[0]
                 if (qType == 1 or qType == 28) and qClass == 1:
-                    return domainName
+                    return domainName, queryID
                 return False
 
 
@@ -142,14 +149,63 @@ class Firewall:
                 if currentResult == "deny":
                     HOST = ip
                     PORT = eport
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
-                    s.connect((HOST,PORT))
-                    
+                    # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
+                    # s.connect((HOST,PORT))
+                    if packetDict['type'] == 'dns':
+                        #respond with kittens website ip address
+                        print "denying a dns query"
+                        dnsPacket = createDenyDNSResponse(hostName,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
+                        self.iface_int.send_ip_packet(dnsPacket)
                     return False
                 else:
                     return currentResult == "pass" #result = currentResult
         return True
     # TODO: You can add more methods as you want.
+
+    def createDenyDNSResponse(hostName, packetID, sourcePort, destPort, sourceIP, destIP):
+        #DNS QUERY RESPONSE STUFF
+        packet = ""
+        hostInfo = []
+        for part in hostName.split('.'):
+            packString += 'b' + str(len(part)) + 's'
+            hostInfo += [len(part)]
+            hostInfo += [part]
+        hostInfo += [0]
+        packString += 'b'
+        host = struct.pack(*([packString]+hostInfo))
+        flags = struct.pack('H',33152)
+        questions = struct.pack('!H',1)
+        ancount = struct.pack('!H',1)
+        nsCount = struct.pack('H',0)
+        arCount = struct.pack('H',0)
+        queryType = struct.pack('!H',1)
+        queryClass = struct.pack('!H', 1)
+        nameAndPointer = struct.pack('!H',int('c00c',16))
+        TTL = struct.pack('!l', 1)
+        dataLength = struct.pack('!H',4)
+        address = socket.inet_aton('169.229.49.109')
+        dnsPacket = packetID+flags+questions+ancount+nsCount+arCount+\
+            nsCount+arCount+host+queryType+queryClass+nameAndPointer+\
+            queryType+queryClass+TTL+dataLength+address
+
+        #UDP HEADER STUFF
+        sourcePort = struct.pack('!H',sourcePort)
+        destPort = struct.pack('!H',destPort)
+        dnsLength = len(dnsPacket)
+        checksum = struct.pack('!H', 0)
+        udpPacket = sourcePort + destPort + dnsLength + checksum + dnsPacket
+
+        #IP HEADER STUFF
+        version = struct.pack('!B',int('45',16))
+        DSCPECN = struct.pack('!B',0)
+        packetLength = struct.pack('!H', 20+len(udpPacket))
+        identification = struct.pack('!H', 0)
+        flags = struct.pack('!B', 0)
+        fragmentOffset = struct.pack('!H', 0)
+        IPTTL = struct.pack('!B', 1)
+        protocol = struct.pack('!B',17) # 17 = UDP
+        packet = udpPacket
+        return packet
 
 # TODO: You may want to add more classes/functions as well.
     def parseRules(self, file):
