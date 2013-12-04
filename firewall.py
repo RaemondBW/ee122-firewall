@@ -139,7 +139,15 @@ class Firewall:
                 eport = packetDict['src_port']
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
-                return currentResult == "pass" #result = currentResult
+                if currentResult == "deny":
+                    HOST = ip
+                    PORT = eport
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
+                    s.connect((HOST,PORT))
+                    
+                    return False
+                else:
+                    return currentResult == "pass" #result = currentResult
         return True
     # TODO: You can add more methods as you want.
 
