@@ -60,6 +60,7 @@ class Firewall:
                     dir_str = 'outgoing'
 
                 pktStuff = self.packetType(pkt,ip_headerLen)
+                print pktStuff
                 if pktStuff == None:
                     if pkt_dir == PKT_DIR_INCOMING:
                         self.iface_int.send_ip_packet(pkt)
@@ -153,7 +154,6 @@ class Firewall:
                     # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
                     # s.connect((HOST,PORT))
                     if packetDict['type'] == 'dns':
-                        #respond with kittens website ip address
                         print "denying a dns query"
                         dnsPacket = createDenyDNSResponse(hostName,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
@@ -263,11 +263,17 @@ class Firewall:
         DSCPECN = struct.pack('!B',0)
         packetLength = struct.pack('!H', 20+len(udpPacket))
         identification = struct.pack('!H', 0)
-        flags = struct.pack('!B', 0)
-        fragmentOffset = struct.pack('!H', 0)
+        #flags = struct.pack('!B', 0)
+        flagsAndFragmentOffset = struct.pack('!H', 0)
         IPTTL = struct.pack('!B', 1)
         protocol = struct.pack('!B',17) # 17 = UDP
-        packet = udpPacket
+        ipChecksum = struct.pack('!H',0) #temporarily zero until we calculate it
+        ipHeader = version+DSCPECN+packetLength+identification+flags+fragmentOffset+flagsAndFragmentOffset+IPTTL+protocol+ipChecksum+sourceIP+destIP
+        ipChecksum = struct.pack('!H',ip_checksum(ipHeader))
+
+        ipHeader = version+DSCPECN+packetLength+identification+flags+fragmentOffset+flags+fragmentOffset+IPTTL+protocol+ipChecksum+sourceIP+destIP
+        packet = ipHeader + udpPacket
+
         return packet
 
 # TODO: You may want to add more classes/functions as well.
