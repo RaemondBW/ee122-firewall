@@ -152,13 +152,15 @@ class Firewall:
                 if currentResult == "deny":
                     HOST = ip
                     PORT = eport
-                    # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
-                    # s.connect((HOST,PORT))
-                    if packetDict['type'] == 'dns':
+                    if packetDict['ptype'] == 'dns':
                         print "denying a dns query"
                         dnsPacket = createDenyDNSResponse(hostName,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
 
+                    if packetDict['ptype'] == 'tcp':
+                        print "denying a tcp packet"
+                        rst_pkt = makeRSTpacket(pkt)
+                        self.iface_int.send_ip_packet(rst_pkt)
                     return False
                 else:
                     return currentResult == "pass" #result = currentResult
