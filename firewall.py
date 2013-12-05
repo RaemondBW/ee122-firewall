@@ -60,19 +60,17 @@ class Firewall:
                 dir_str = 'outgoing'
 
             pktStuff = self.packetType(pkt,ip_headerLen)
-            print pktStuff
+            if pktStuff != None:
+                pktStuff['src_ip'] = pkt[12:16]
+                pktStuff['dst_ip'] = pkt[16:20]
             if pktStuff == None:
                 if pkt_dir == PKT_DIR_INCOMING:
                     self.iface_int.send_ip_packet(pkt)
                 elif pkt_dir == PKT_DIR_OUTGOING:
                     self.iface_ext.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
-                pktStuff['src_ip'] = src_ip
-                pktStuff['dst_ip'] = dst_ip
                 self.iface_int.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
-                pktStuff['src_ip'] = src_ip
-                pktStuff['dst_ip'] = dst_ip
                 self.iface_ext.send_ip_packet(pkt)
         #except:
         #    pass
@@ -152,9 +150,10 @@ class Firewall:
                 if currentResult == "deny":
                     HOST = ip
                     PORT = eport
+
                     if packetDict['ptype'] == 'dns':
                         print "denying a dns query"
-                        dnsPacket = createDenyDNSResponse(hostName,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
+                        dnsPacket = self.createDenyDNSResponse(hostname,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
 
                     if packetDict['ptype'] == 'tcp':
@@ -255,10 +254,11 @@ class Firewall:
         return total
 
 
-    def createDenyDNSResponse(hostName, packetID, sourcePort, destPort, sourceIP, destIP):
+    def createDenyDNSResponse(self, hostName, packetID, sourcePort, destPort, sourceIP, destIP):
         #DNS QUERY RESPONSE STUFF
         packet = ""
         hostInfo = []
+        packString = ""
         for part in hostName.split('.'):
             packString += 'b' + str(len(part)) + 's'
             hostInfo += [len(part)]
@@ -284,7 +284,7 @@ class Firewall:
         #UDP HEADER STUFF
         sourcePort = struct.pack('!H',sourcePort)
         destPort = struct.pack('!H',destPort)
-        dnsLength = len(dnsPacket)
+        dnsLength = struct.pack('!H',len(dnsPacket))
         checksum = struct.pack('!H', 0)
         udpPacket = sourcePort + destPort + dnsLength + checksum + dnsPacket
 
@@ -298,10 +298,10 @@ class Firewall:
         IPTTL = struct.pack('!B', 1)
         protocol = struct.pack('!B',17) # 17 = UDP
         ipChecksum = struct.pack('!H',0) #temporarily zero until we calculate it
-        ipHeader = version+DSCPECN+packetLength+identification+flags+fragmentOffset+flagsAndFragmentOffset+IPTTL+protocol+ipChecksum+sourceIP+destIP
-        ipChecksum = struct.pack('!H',ip_checksum(ipHeader))
+        ipHeader = version+DSCPECN+packetLength+identification+flagsAndFragmentOffset+IPTTL+protocol+ipChecksum+sourceIP+destIP
+        ipChecksum = struct.pack('!H',self.ip_checksum(ipHeader))
 
-        ipHeader = version+DSCPECN+packetLength+identification+flags+fragmentOffset+flags+fragmentOffset+IPTTL+protocol+ipChecksum+sourceIP+destIP
+        ipHeader = version+DSCPECN+packetLength+identification+flagsAndFragmentOffset+IPTTL+protocol+ipChecksum+sourceIP+destIP
         packet = ipHeader + udpPacket
 
         return packet
