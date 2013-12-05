@@ -260,11 +260,10 @@ class Firewall:
             hostInfo += [part]
         hostInfo += [0]
         packString += 'b'
-        print packString
-        print hostInfo
 
         host = struct.pack(*([packString]+hostInfo))
-        flags = struct.pack('!H',int('1000000110000000',2))
+        #                             1000000100000000
+        flags = struct.pack('!H',int('1000000000000000',2))
         questions = struct.pack('!H',1)
         ancount = struct.pack('!H',1)
         nsCount = struct.pack('H',0)
@@ -282,7 +281,7 @@ class Firewall:
         #UDP HEADER STUFF
         sourcePort = struct.pack('!H',sourcePort)
         destPort = struct.pack('!H',destPort)
-        dnsLength = struct.pack('!H',len(dnsPacket))
+        dnsLength = struct.pack('!H',len(dnsPacket)+8)
         checksum = struct.pack('!H', 0)
         udpPacket = sourcePort + destPort + dnsLength + checksum + dnsPacket
 
@@ -292,7 +291,7 @@ class Firewall:
         packetLength = struct.pack('!H', 20+len(udpPacket))
         identification = struct.pack('!H', 0)
         flagsAndFragmentOffset = struct.pack('!H', 0)
-        IPTTL = struct.pack('!B', 1)
+        IPTTL = struct.pack('!B', 2)
         protocol = struct.pack('!B',17) # 17 = UDP
         ipChecksum = struct.pack('!H',0) #temporarily zero until we calculate it
         ipHeader = version+DSCPECN+packetLength+identification+flagsAndFragmentOffset+IPTTL+protocol+ipChecksum+sourceIP+destIP
