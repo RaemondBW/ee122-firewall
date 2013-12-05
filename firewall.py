@@ -260,8 +260,11 @@ class Firewall:
             hostInfo += [part]
         hostInfo += [0]
         packString += 'b'
+        print packString
+        print hostInfo
+
         host = struct.pack(*([packString]+hostInfo))
-        flags = struct.pack('H',33152)
+        flags = struct.pack('!H',int('1000000110000000',2))
         questions = struct.pack('!H',1)
         ancount = struct.pack('!H',1)
         nsCount = struct.pack('H',0)
@@ -273,7 +276,7 @@ class Firewall:
         dataLength = struct.pack('!H',4)
         address = socket.inet_aton('169.229.49.109')
         dnsPacket = packetID+flags+questions+ancount+nsCount+arCount+\
-            nsCount+arCount+host+queryType+queryClass+nameAndPointer+\
+            host+queryType+queryClass+nameAndPointer+\
             queryType+queryClass+TTL+dataLength+address
 
         #UDP HEADER STUFF
@@ -288,7 +291,6 @@ class Firewall:
         DSCPECN = struct.pack('!B',0)
         packetLength = struct.pack('!H', 20+len(udpPacket))
         identification = struct.pack('!H', 0)
-        #flags = struct.pack('!B', 0)
         flagsAndFragmentOffset = struct.pack('!H', 0)
         IPTTL = struct.pack('!B', 1)
         protocol = struct.pack('!B',17) # 17 = UDP
