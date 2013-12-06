@@ -198,8 +198,8 @@ class Firewall:
         rst_pkt = rst_pkt[:ip_len+8] + struct.pack('!L', struct.unpack('!L', pkt[ip_len+4 : ip_len+8])[0] + 1) + rst_pkt[ip_len+12:]
 
         # set the offset
-        offset = ((len(rst_pkt) - ip_len)/4) << 4
-        rst_pkt = rst_pkt[:ip_len+12] + struct.pack('!B', offset) + rst_pkt[ip_len+13:]
+        # offset = ((len(rst_pkt) - ip_len)/4) << 4
+        # rst_pkt = rst_pkt[:ip_len+12] + struct.pack('!B', offset) + rst_pkt[ip_len+13:]
 
         # set the flag to RST, ACT
         rst_pkt = rst_pkt[:ip_len+13] + struct.pack('!B', 0x14) + rst_pkt[ip_len+14:]
@@ -322,7 +322,7 @@ class Firewall:
             else:
                 self.rules.append(Rule(tokens[0], tokens[1], tokens[2], tokens[3]))
         ruleFile.close()
-        self.rules.reverse()
+        # self.rules.reverse()
 
 class Rule:
 
