@@ -64,20 +64,24 @@ class Firewall:
                 pktStuff['src_ip'] = pkt[12:16]
                 pktStuff['dst_ip'] = pkt[16:20]
             if pktStuff == None:
+                print "PKT STUFF IS NONE!!!"
                 if pkt_dir == PKT_DIR_INCOMING:
+                    print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                     self.iface_int.send_ip_packet(pkt)
                 elif pkt_dir == PKT_DIR_OUTGOING:
+                    print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                     self.iface_ext.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
+                print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                 self.iface_int.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
+                print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                 self.iface_ext.send_ip_packet(pkt)
         #except:
         #    pass
 
 
-        print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid,
-               src_ip, dst_ip)
+        # print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
 
 
     def packetType(self, pkt, offset):
@@ -159,7 +163,7 @@ class Firewall:
                     if packetDict['ptype'] == 'tcp':
                         print "denying a tcp packet"
                         rst_pkt = self.makeRSTpacket(pkt)
-                        self.iface_ext.send_ip_packet(rst_pkt)
+                        self.iface_int.send_ip_packet(rst_pkt)
                     return False
                 else:
                     return currentResult == "pass" #result = currentResult
@@ -170,14 +174,13 @@ class Firewall:
         # I did this to make a deep copy of the packet and cut off unnecessary options and tcp data. 
         # Not sure if it should be done this way.
         ip_len = int(str(int(pkt[0],16) & 0b1111), 16)
-        rst_pkt = pkt[:ip_len+20]
-
+        rst_pkt = pkt[:]
         # -------------------------------
         # fix the ip header and checksum
         # -------------------------------
         
         # swap the src and dst ips
-        rst_pkt = rst_pkt[0:12] + pkt[16:20] + pkt[12:16] + rst_pkt[16:]
+        rst_pkt = rst_pkt[0:12] + pkt[16:20] + pkt[12:16] + rst_pkt[20:]
 
         # set checksum = 0x0000
         rst_pkt = rst_pkt[:10] + struct.pack('!H',0x0000) + rst_pkt[12:]
@@ -191,35 +194,22 @@ class Firewall:
 
         # swap the TCP ports
         rst_pkt = rst_pkt[:ip_len] + pkt[ip_len+2 : ip_len+4] + pkt[ip_len : ip_len + 2] + rst_pkt[ip_len+4:]
-        
         # change TCP ack number
         rst_pkt = rst_pkt[:ip_len+8] + struct.pack('!L', struct.unpack('!L', pkt[ip_len+4 : ip_len+8])[0] + 1) + rst_pkt[ip_len+12:]
+
+        # set the offset
+        offset = ((len(rst_pkt) - ip_len)/4) << 4
+        rst_pkt = rst_pkt[:ip_len+12] + struct.pack('!B', offset) + rst_pkt[ip_len+13:]
 
         # set the flag to RST, ACT
         rst_pkt = rst_pkt[:ip_len+13] + struct.pack('!B', 0x14) + rst_pkt[ip_len+14:]
 
         # TCP checksum = 0x0000
-        rst_pkt = rst_pkt[:ip_len+16] + struct.pack('!H', 0x0000) + rst_pkt[ip_len+18:]
-
-        # set the offset to 5
-        rst_pkt = rst_pkt[:ip_len+12] + struct.pack('!B', 0x50) + rst_pkt[ip_len+13:]
+        rst_pkt = rst_pkt[:ip_len+16] + struct.pack('!L', 0x00000000) + rst_pkt[ip_len+20:]
 
         # calculate tcp_checksum
-        rst_pkt = rst_pkt[:ip_len+16] + struct.pack('!H', self.tcp_checksum(rst_pkt)) + rst_pkt[ip_len+18:]
-
-        rst_pkt = rst_pkt[:ip_len+18] + struct.pack('!H', 0x0000)
-
-        print hex(struct.unpack('!L', rst_pkt[0:4])[0])
-        print hex(struct.unpack('!L', rst_pkt[4:8])[0])
-        print hex(struct.unpack('!L', rst_pkt[8:12])[0])
-        print hex(struct.unpack('!L', rst_pkt[12:16])[0])
-        print hex(struct.unpack('!L', rst_pkt[16:20])[0])
-        print hex(struct.unpack('!L', rst_pkt[20:24])[0])
-        print hex(struct.unpack('!L', rst_pkt[24:28])[0])
-        print hex(struct.unpack('!L', rst_pkt[28:32])[0])
-        print hex(struct.unpack('!L', rst_pkt[32:36])[0])
-        print hex(struct.unpack('!L', rst_pkt[36:40])[0])
-        # print hex(struct.unpack('!L', rst_pkt[40:44])[0])
+        ck_sum = self.tcp_checksum(rst_pkt)
+        rst_pkt = rst_pkt[:ip_len+16] + struct.pack('!H', ck_sum) + rst_pkt[ip_len+18:]
 
         return rst_pkt
 
@@ -236,9 +226,8 @@ class Firewall:
         return total
 
     def tcp_checksum(self, pkt):
-
+        
         ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
-        w = ip_headerLen
         ip_src = struct.unpack('!H', pkt[12:14])[0] + struct.unpack('!H', pkt[14:16])[0]
         ip_dst = struct.unpack('!H', pkt[16:18])[0] + struct.unpack('!H', pkt[18:20])[0]
 
@@ -246,10 +235,16 @@ class Firewall:
         tcp_len = len(pkt) - ip_headerLen
 
         total = 0
+        pkt = pkt[ip_headerLen:]
+        w = 0
 
         while w < len(pkt):
-            total += struct.unpack('!H', pkt[w:w+2])[0]
-            w += 2
+            if len(pkt) - w == 1:
+                total += struct.unpack('!B', pkt[w])[0]
+                w += 1
+            else:
+                total += struct.unpack('!H', pkt[w:w+2])[0]
+                w += 2
 
         total = total + ip_src + ip_dst + tcp_prot + tcp_len
 
