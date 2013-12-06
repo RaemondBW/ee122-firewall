@@ -195,8 +195,8 @@ class Firewall:
         # change TCP ack number
         rst_pkt = rst_pkt[:ip_len+8] + struct.pack('!L', struct.unpack('!L', pkt[ip_len+4 : ip_len+8])[0] + 1) + rst_pkt[ip_len+12:]
 
-        # set the flag to RST
-        rst_pkt = rst_pkt[:ip_len+13] + struct.pack('!B', 0x04) + rst_pkt[ip_len+14:]
+        # set the flag to RST, ACT
+        rst_pkt = rst_pkt[:ip_len+13] + struct.pack('!B', 0x14) + rst_pkt[ip_len+14:]
 
         # TCP checksum = 0x0000
         rst_pkt = rst_pkt[:ip_len+16] + struct.pack('!H', 0x0000) + rst_pkt[ip_len+18:]
@@ -205,7 +205,21 @@ class Firewall:
         rst_pkt = rst_pkt[:ip_len+12] + struct.pack('!B', 0x50) + rst_pkt[ip_len+13:]
 
         # calculate tcp_checksum
-        rst_pkt = rst_pkt[:ip_len+16] + struct.pack('!H', self.tcp_checksum(rst_pkt)) + struct.pack('!H', 0x0000)
+        rst_pkt = rst_pkt[:ip_len+16] + struct.pack('!H', self.tcp_checksum(rst_pkt)) + rst_pkt[ip_len+18:]
+
+        rst_pkt = rst_pkt[:ip_len+18] + struct.pack('!H', 0x0000)
+
+        print hex(struct.unpack('!L', rst_pkt[0:4])[0])
+        print hex(struct.unpack('!L', rst_pkt[4:8])[0])
+        print hex(struct.unpack('!L', rst_pkt[8:12])[0])
+        print hex(struct.unpack('!L', rst_pkt[12:16])[0])
+        print hex(struct.unpack('!L', rst_pkt[16:20])[0])
+        print hex(struct.unpack('!L', rst_pkt[20:24])[0])
+        print hex(struct.unpack('!L', rst_pkt[24:28])[0])
+        print hex(struct.unpack('!L', rst_pkt[28:32])[0])
+        print hex(struct.unpack('!L', rst_pkt[32:36])[0])
+        print hex(struct.unpack('!L', rst_pkt[36:40])[0])
+        # print hex(struct.unpack('!L', rst_pkt[40:44])[0])
 
         return rst_pkt
 
@@ -222,31 +236,28 @@ class Firewall:
         return total
 
     def tcp_checksum(self, pkt):
-        w = int(str(int(pkt[0],16) & 0b1111), 16)
-        ip_src = struct.unpack('!L', pkt[12:16])[0]
-        ip_dst = struct.unpack('!L', pkt[16:20])[0]
+
+        ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
+        w = ip_headerLen
+        ip_src = struct.unpack('!H', pkt[12:14])[0] + struct.unpack('!H', pkt[14:16])[0]
+        ip_dst = struct.unpack('!H', pkt[16:18])[0] + struct.unpack('!H', pkt[18:20])[0]
 
         tcp_prot = 6
-        tcp_len = 20
-        bitsleft = 20
+        tcp_len = len(pkt) - ip_headerLen
 
         total = 0
 
-        while bitsleft > 1:
+        while w < len(pkt):
             total += struct.unpack('!H', pkt[w:w+2])[0]
             w += 2
-            bitsleft -= 2
-        if bitsleft > 0:
-            total += struct.unpack('!B', pkt[w])[0]
 
         total = total + ip_src + ip_dst + tcp_prot + tcp_len
 
         total = (total >> 16) + (total & 0xFFFF)
-        total += (total >> 16)
 
-        total = total ^ 0xFFFF
+        ans = 0xFFFF - total
 
-        return total
+        return ans
 
 
     def createDenyDNSResponse(self, hostName, packetID, sourcePort, destPort, sourceIP, destIP):
