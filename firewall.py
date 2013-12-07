@@ -30,6 +30,7 @@ class Firewall:
         self.iface_ext = iface_ext
         self.rules = []
         self.logRules = []
+        self.tcpHeaderBuffer = {}
         self.lossrate = 0
         if config.has_key('rule'):
             self.parseRules(config['rule'])
@@ -54,7 +55,7 @@ class Firewall:
             src_ip = socket.inet_ntoa(pkt[12:16])
             dst_ip = socket.inet_ntoa(pkt[16:20])
             ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
-            
+
             if pkt_dir == PKT_DIR_INCOMING:
                 dir_str = 'incoming'
             else:
@@ -89,6 +90,12 @@ class Firewall:
         protocol, = struct.unpack('!B', pkt[9])
         packetDict = dict()
         if protocol == 6:
+            sequenceNumber = int(struct.unpack('!I',pkt[offset+4:offset+8])[0])
+            ackNumber = int(struct.unpack('!I',pkt[offset+8:offset+12]))
+            print "sequence number: " + str(sequenceNumber)
+            print "ack number: " + str(ackNumber)
+            tcpOffset = struct.unpack('!B',pkt[offset+12:offset+13])[0]
+            print "tcp Offset: " + tcpOffset
             packetDict = {"ptype":"tcp", "src_port": struct.unpack('!H', pkt[offset:offset+2])[0], "dst_port": struct.unpack('!H', pkt[offset+2:offset+4])[0]}
         elif protocol == 17:
             dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
@@ -105,7 +112,6 @@ class Firewall:
         else:
             return None
         return packetDict
-
 
     def isDNS(self, pkt, offset):
         dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
@@ -183,6 +189,20 @@ class Firewall:
                     #log
                     break
         return True
+
+    def reconstructPackets(self, packetDict, pkt):
+        ip = packetDict['src_ip']
+        port = packetDict['src_port']
+        if self.tcpHeaderBuffer.has_key((ip,port)):
+            if '\r\n\r\n' in pkt:
+                #WE know that this pkt contains the end of the http header
+                self.tcpHeaderBuffer[(ip,port)] += pkt.split('\r\n\r\n')[0]
+                header = self.tcpHeaderBuffer[(ip,port)].decode('hex')
+                parseHttpHeader(header)
+            else:
+                self.tcpHeaderBuffer[(ip,port)] += pkt
+        else:
+            self.tcpHeaderBuffer[(ip,port)] = pkt
 
     def makeRSTpacket(self, pkt):
 
