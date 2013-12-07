@@ -29,6 +29,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
         self.rules = []
+        self.logRules = []
         self.lossrate = 0
         if config.has_key('rule'):
             self.parseRules(config['rule'])
@@ -138,17 +139,19 @@ class Firewall:
 
 
     def passPacket(self, packetDict, ip, pkt, direction):
+        hostname = None
+        eport = None
+        if packetDict.has_key('hostname'):
+            hostname = packetDict['hostname']
+        if packetDict['ptype'] == 'icmp':
+            eport = packetDict['type']
+        elif direction == 'outgoing' and packetDict.has_key('dst_port'):
+            eport = packetDict['dst_port']
+        elif direction == 'incoming' and packetDict.has_key('src_port'):
+            eport = packetDict['src_port']
+        result = False
+
         for rule in self.rules:
-            hostname = None
-            eport = None
-            if packetDict.has_key('hostname'):
-                hostname = packetDict['hostname']
-            if packetDict['ptype'] == 'icmp':
-                eport = packetDict['type']
-            elif direction == 'outgoing' and packetDict.has_key('dst_port'):
-                eport = packetDict['dst_port']
-            elif direction == 'incoming' and packetDict.has_key('src_port'):
-                eport = packetDict['src_port']
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
                 if currentResult == "deny":
@@ -159,14 +162,23 @@ class Firewall:
                         print "denying a dns query"
                         dnsPacket = self.createDenyDNSResponse(hostname,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
-
-                    if packetDict['ptype'] == 'tcp':
+                    elif packetDict['ptype'] == 'tcp':
                         print "denying a tcp packet"
                         rst_pkt = self.makeRSTpacket(pkt)
                         self.iface_int.send_ip_packet(rst_pkt)
                     return False
                 else:
-                    return currentResult == "pass" #result = currentResult
+                    result = currentResult == 'pass'
+                    break # return currentResult == "pass"
+        if not result:
+            return False
+
+        if packetDict['ptype'] == 'tcp':
+            for rule in self.logRules:
+                if rule.getPacketResult(packetDict['ptype'], ip, eport, hostname) == 'log':
+                    print "log this packet"
+                    #log
+                    break
         return True
 
     def makeRSTpacket(self, pkt):
@@ -317,6 +329,8 @@ class Firewall:
                 pass
             elif tokens[0] == "%":
                 continue
+            elif tokens[0] == "log":
+                self.logRules.append(Rule(tokens[0], tokens[1], tokens[2]))
             elif len(tokens) == 3:
                 self.rules.append(Rule(tokens[0], tokens[1], tokens[2]))
             else:
