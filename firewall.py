@@ -139,6 +139,7 @@ class Firewall:
 
 
     def passPacket(self, packetDict, ip, pkt, direction):
+        print "checking rules"
         hostname = None
         eport = None
         if packetDict.has_key('hostname'):
@@ -149,7 +150,7 @@ class Firewall:
             eport = packetDict['dst_port']
         elif direction == 'incoming' and packetDict.has_key('src_port'):
             eport = packetDict['src_port']
-        result = False
+        result = None
 
         for rule in self.rules:
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
@@ -170,12 +171,14 @@ class Firewall:
                 else:
                     result = currentResult == 'pass'
                     break # return currentResult == "pass"
-        if not result:
+        if result != None and not result:
             return False
 
         if packetDict['ptype'] == 'tcp':
             for rule in self.logRules:
-                if rule.getPacketResult(packetDict['ptype'], ip, eport, hostname) == 'log':
+                packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
+                print packetResult
+                if packetResult == 'log':
                     print "log this packet"
                     #log
                     break
@@ -348,7 +351,7 @@ class Rule:
 
 
     def getPacketResult(self, ptype, addr, eport, hostName):
-        if ptype == "dns":
+        if ptype == "dns" or self.passDrop == 'log':
             if ("*" not in self.ipAddress) and hostName == self.ipAddress:
                 return self.passDrop
             elif "*" in self.ipAddress:
