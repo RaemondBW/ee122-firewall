@@ -138,6 +138,11 @@ class Firewall:
 
 
     def passPacket(self, packetDict, ip, pkt, direction):
+        
+        tcp_deny_match = False
+        log_match = False
+        dns_match = False
+
         for rule in self.rules:
             hostname = None
             eport = None
@@ -151,22 +156,33 @@ class Firewall:
                 eport = packetDict['src_port']
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
+                if currentResult == "log":
+                    log_match = True
+
                 if currentResult == "deny":
                     HOST = ip
                     PORT = eport
 
                     if packetDict['ptype'] == 'dns':
                         print "denying a dns query"
+                        dns_match = True
                         dnsPacket = self.createDenyDNSResponse(hostname,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
 
-                    if packetDict['ptype'] == 'tcp':
+                    if packetDict['ptype'] == 'tcp' and not tcp_deny_match:
                         print "denying a tcp packet"
+                        tcp_deny_match = True
                         rst_pkt = self.makeRSTpacket(pkt)
                         self.iface_int.send_ip_packet(rst_pkt)
-                    return False
                 else:
                     return currentResult == "pass" #result = currentResult
+        if tcp_deny_match or dns_match:
+            return False
+        elif log_match:
+
+            # log stuff...
+            return True
+
         return True
 
     def makeRSTpacket(self, pkt):
