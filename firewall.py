@@ -30,9 +30,11 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
         self.rules = []
-        self.http_rules = []
+        self.logRules = []
+        self.tcpHeaderBuffer = {}
+        self.tcpOutgoingInformationBuffer = {}
+        self.logfile = open('http.log', 'a')
         self.lossrate = 0
-        self.buffer = {}    # this is a dict["src_port"] ==> {}
         if config.has_key('rule'):
             self.parseRules(config['rule'])
         if config.has_key('loss'):
@@ -56,7 +58,7 @@ class Firewall:
             src_ip = socket.inet_ntoa(pkt[12:16])
             dst_ip = socket.inet_ntoa(pkt[16:20])
             ipid, = struct.unpack('!H', pkt[4:6])    # IP identifier (big endian)
-            
+
             if pkt_dir == PKT_DIR_INCOMING:
                 dir_str = 'incoming'
             else:
@@ -67,13 +69,18 @@ class Firewall:
                 pktStuff['src_ip'] = pkt[12:16]
                 pktStuff['dst_ip'] = pkt[16:20]
             if pktStuff == None:
+                print "PKT STUFF IS NONE!!!"
                 if pkt_dir == PKT_DIR_INCOMING:
+                    print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                     self.iface_int.send_ip_packet(pkt)
                 elif pkt_dir == PKT_DIR_OUTGOING:
+                    print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                     self.iface_ext.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
+                print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                 self.iface_int.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
+                print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                 self.iface_ext.send_ip_packet(pkt)
         #except:
         #    pass
@@ -86,7 +93,11 @@ class Firewall:
         protocol, = struct.unpack('!B', pkt[9])
         packetDict = dict()
         if protocol == 6:
-            packetDict = {"ptype":"tcp", "ip_len": offset, "tcp_len": (struct.unpack('!B', offset + 12) & 0xF0) * 4 ,"src_port": struct.unpack('!H', pkt[offset:offset+2])[0], "dst_port": struct.unpack('!H', pkt[offset+2:offset+4])[0]}
+            sequenceNumber = struct.unpack('!I',pkt[offset+4:offset+8])[0]
+            ackNumber = struct.unpack('!I',pkt[offset+8:offset+12])[0]
+            tcpOffset = int(hex(struct.unpack('!B',pkt[offset+12:offset+13])[0])[2:3],16)*4
+            packetDict = {"ptype":"tcp", "src_port": struct.unpack('!H', pkt[offset:offset+2])[0], "dst_port": struct.unpack('!H', pkt[offset+2:offset+4])[0],\
+                            "sequenceNumber": sequenceNumber, "ackNumber": ackNumber, "tcpOffset": tcpOffset, "totalOffset": tcpOffset+offset}
         elif protocol == 17:
             dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
             src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
@@ -102,7 +113,6 @@ class Firewall:
         else:
             return None
         return packetDict
-
 
     def isDNS(self, pkt, offset):
         dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
@@ -134,159 +144,24 @@ class Firewall:
                     return (domainName, queryID)
                 return False
 
-    #------------------------------------
-    # http log
-    #------------------------------------
-    # todo: STILL NEED TO HANDLE SEQ, ACK NUMBER STUFF!!!!!
-    def http_log_handler(self, packetDict, pkt):
-
-        # -------------------------------
-        # HTTP RESQUEST
-        # -------------------------------
-        if packetDict["ptype"] == "tcp" and packetDict["dst_port"] == 80:
-            # get the offset to http header
-            http_offset = packetDict["ip_len"] + packetDict["tcp_len"]
-            
-            # check if there is http data after tcp
-            if len(pkt) == http_offset:
-                return
-
-            else:
-                srcport = packetDict["src_port"]
-
-                # first ever packet in a particular port
-                if not self.buffer.has_key(srcport):
-                    
-                    # create a new connection with the given port
-                    self.buffer[srcport] = {}
-                    self.buffer[srcport]["request_end"] = False
-
-                    # construct the http header
-                    http_request_header, end = self.get_http_header(pkt, http_offset, "")
-                    self.buffer[srcport]["request"] = http_request_header
-
-                    # check if it is the end of the http header
-                    if end:
-                        self.buffer[srcport]["request_end"] = True
-
-                # the rest of the packets if it is not the end of the http header
-                # if it is the end of the request header, just ignore the rest
-                elif self.buffer.has_key(srcport) and not self.buffer[srcport]["request_end"]:
-
-                    # construct the http header
-                    existing_request_header = self.buffer[srcport]["request"]
-                    http_request_header, end = self.get_http_header(pkt, http_offset, existing_request_header) 
-                    self.buffer[srcport]["request"] = http_request_header
-
-                    # check if it is the end of the http header
-                    if end:
-                        self.buffer[srcport]["request_end"] = True
-
-
-        # ---------------------------------
-        # HTTP RESPONSE
-        # ---------------------------------
-        elif packetDict["ptype"] == "tcp" and packetDict["src_port"] == 80:
-
-            http_offset = packetDict["ip_len"] + packetDict["tcp_len"]
-
-            # check if this response has a request; if not, just do nothing
-            dst_port = packetDict["dst_port"]
-            if not self.buffer.has_key(dst_port):
-                # do nothing
-                return 
-            else:
-
-                # this is the very first response
-                if not self.buffer[dst_port].has_key("response"):
-
-                    # create the response
-                    self.buffer[dst_port]["response"] = {}
-                    self.buffer[dst_port]["response_end"] = False
-
-                    http_response_header, end = self.get_http_header(pkt, http_offset,"")
-
-                    if end:
-                        self.http_logger(dst_port)
-
-                # this is the later responses
-                else:
-
-                    existing_response_header = self.buffer[port]["response"]
-                    http_response_header, end = self.get_http_header(pkt, http_offset, existing_response_header)
-                    self.buffer[port]["response"] = http_response_header
-
-                    if end:
-                        self.http_logger(dst_port)
-
-    def get_http_header(self, pkt, offset, parsed_header_string):
-        """
-        This function takes in the whole packet
-        parse the http header,
-        and check if it is the end of the http header string
-        """
-        http_string = pkt[offset:].decode("hex")
-
-        # convert all occurences of \r to empty string
-        re.subn('(\r)', "", http_string)
-
-        # check if there is a new line
-        end = re.search('\n\n', http_string) != None
-        if end:
-            http_string = re.split('\n\n', http_string)[0]
-
-        return (http_string, end)
-
-    def parse_http_header(self, resquest_header, response_header):
-        """
-        This function takes in the http request header and response header as 2 STRINGS,
-        parse it
-        and returns a dictionary
-        """        
-        pass
-
-    def http_logger(self, port):
-        """
-        This function takes in a http dictionary
-        match it against the logging rules
-        if a rule is matched, log it
-        if none of the rules are matched, it deletes this particular tcp connection from the buffer
-        """
-        request_dictionary = 
-        # if it matches any rules, log it and delete it.
-        # else just delete it
-        if self.match_http_rules(http_dict):
-            # logging code
-            pass
-
-        self.buffer.pop(port)
-
-    def match_http_rules(self, http_dict):
-        """
-        This function takes in a dictionary of parsed http header
-        and determine if it matches any of the rules
-        """
-        pass
 
     def passPacket(self, packetDict, ip, pkt, direction):
-        
-        # call the logging part here
-        self.http_log_handler(packetDict, pkt)
+        print "checking rules"
+        hostname = None
+        eport = None
+        if packetDict.has_key('hostname'):
+            hostname = packetDict['hostname']
+        if packetDict['ptype'] == 'icmp':
+            eport = packetDict['type']
+        elif direction == 'outgoing' and packetDict.has_key('dst_port'):
+            eport = packetDict['dst_port']
+        elif direction == 'incoming' and packetDict.has_key('src_port'):
+            eport = packetDict['src_port']
+        result = None
 
         for rule in self.rules:
-            hostname = None
-            eport = None
-            if packetDict.has_key('hostname'):
-                hostname = packetDict['hostname']
-            if packetDict['ptype'] == 'icmp':
-                eport = packetDict['type']
-            elif direction == 'outgoing' and packetDict.has_key('dst_port'):
-                eport = packetDict['dst_port']
-            elif direction == 'incoming' and packetDict.has_key('src_port'):
-                eport = packetDict['src_port']
             currentResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
             if currentResult != "nomatch":
-
                 if currentResult == "deny":
                     HOST = ip
                     PORT = eport
@@ -295,17 +170,75 @@ class Firewall:
                         print "denying a dns query"
                         dnsPacket = self.createDenyDNSResponse(hostname,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
-                        return False
-
-                    if packetDict['ptype'] == 'tcp':
+                    elif packetDict['ptype'] == 'tcp':
                         print "denying a tcp packet"
                         rst_pkt = self.makeRSTpacket(pkt)
                         self.iface_int.send_ip_packet(rst_pkt)
-                        return False
+                    return False
                 else:
-                    return currentResult == "pass" #result = currentResult
-
+                    result = currentResult == 'pass'
+                    break # return currentResult == "pass"
+        if result != None and not result:
+            return False
+        if packetDict['ptype'] == 'tcp':# and direction == 'outgoing':
+            for rule in self.logRules:
+                packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
+                print packetResult
+                if packetResult == 'log':
+                    print "log this packet"
+                    #log
+                    return self.reconstructPackets(packetDict, pkt, direction)
+                    break
         return True
+
+    def reconstructPackets(self, packetDict, pkt, direction):
+        # print packetDict
+
+        # check the tcp seq/ack number here
+
+
+        if direction == 'outgoing':
+            ip = packetDict['src_ip']
+            port = packetDict['src_port']
+        else:
+            ip = packetDict['dst_ip']
+            port = packetDict['dst_port']
+        tcpOffset = packetDict['totalOffset']
+        #need to check ack and seq number
+        pkt = pkt[tcpOffset:]
+        if self.tcpHeaderBuffer.has_key((ip,port,direction)):
+            pkt = re.subn('\r',"",pkt)[0]
+            if '\n\n' in pkt:
+                #We know that this pkt contains the end of the http header
+                self.tcpHeaderBuffer[(ip,port,direction)] += pkt.split('\n\n')[0]
+                header = self.tcpHeaderBuffer[(ip,port,direction)]
+                self.parseHttpHeader(header,ip,port,direction)
+                del self.tcpHeaderBuffer[(ip,port,direction)]
+            else:
+                self.tcpHeaderBuffer[(ip,port,direction)] += pkt
+        else:
+            self.tcpHeaderBuffer[(ip,port,direction)] = pkt
+        return True
+
+    def parseHttpHeader(self, header,ip,port,direction):
+        if direction == 'outgoing':
+            requestInfo = header.split('\n')[0] # method path version
+            hostName = header.split('Host: ')[1].split()[0]
+            self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
+        else:
+            print header
+            statusCode = header.split()[1]
+            if "Content-Length" in header:
+                objectSize = header.split("Content-Length: ")[1].split()[0]
+            else:
+                objectSize = "-1"
+            if self.tcpOutgoingInformationBuffer.has_key((ip,port)):
+                requestInfo, hostName = self.tcpOutgoingInformationBuffer[(ip,port)]
+                self.logfile.write(hostName + " " + requestInfo + " " + statusCode + " " + objectSize + "\n")
+                self.logfile.flush()
+                del self.tcpOutgoingInformationBuffer[(ip,port)]
+        print header.split()
+        return None
 
     def makeRSTpacket(self, pkt):
 
@@ -334,6 +267,10 @@ class Firewall:
         rst_pkt = rst_pkt[:ip_len] + pkt[ip_len+2 : ip_len+4] + pkt[ip_len : ip_len + 2] + rst_pkt[ip_len+4:]
         # change TCP ack number
         rst_pkt = rst_pkt[:ip_len+8] + struct.pack('!L', struct.unpack('!L', pkt[ip_len+4 : ip_len+8])[0] + 1) + rst_pkt[ip_len+12:]
+
+        # set the offset
+        # offset = ((len(rst_pkt) - ip_len)/4) << 4
+        # rst_pkt = rst_pkt[:ip_len+12] + struct.pack('!B', offset) + rst_pkt[ip_len+13:]
 
         # set the flag to RST, ACT
         rst_pkt = rst_pkt[:ip_len+13] + struct.pack('!B', 0x14) + rst_pkt[ip_len+14:]
@@ -451,11 +388,10 @@ class Firewall:
                 pass
             elif tokens[0] == "%":
                 continue
+            elif tokens[0] == "log":
+                self.logRules.append(Rule(tokens[0], tokens[1], tokens[2]))
             elif len(tokens) == 3:
-                if tokens[0] == "log":
-                    self.http_rules.append(Rule(tokens[0], tokens[1], tokens[2]))
-                else:
-                    self.rules.append(Rule(tokens[0], tokens[1], tokens[2]))
+                self.rules.append(Rule(tokens[0], tokens[1], tokens[2]))
             else:
                 self.rules.append(Rule(tokens[0], tokens[1], tokens[2], tokens[3]))
         ruleFile.close()
@@ -471,8 +407,8 @@ class Rule:
 
 
     def getPacketResult(self, ptype, addr, eport, hostName):
-        if ptype == "dns":
-            if ("*" not in self.ipAddress) and hostName == self.ipAddress:
+        if ptype == "dns" or self.passDrop == 'log':
+            if ("*" not in self.ipAddress) and (hostName == self.ipAddress or self.ipAddress == ip):
                 return self.passDrop
             elif "*" in self.ipAddress:
                 if len(self.ipAddress) == 1:
@@ -513,7 +449,6 @@ class Rule:
                     return "nomatch"
                     
                 return "nomatch"
-        elif ptype == "tcp" and 
         else: # protocols
             if ptype == self.packetType:
 
