@@ -31,6 +31,8 @@ class Firewall:
         self.rules = []
         self.logRules = []
         self.tcpHeaderBuffer = {}
+        self.tcpOutgoingInformationBuffer = {}
+        self.logfile = open('http.log', 'a')
         self.lossrate = 0
         if config.has_key('rule'):
             self.parseRules(config['rule'])
@@ -177,38 +179,58 @@ class Firewall:
                     break # return currentResult == "pass"
         if result != None and not result:
             return False
-        if packetDict['ptype'] == 'tcp' and direction == 'outgoing':
+        if packetDict['ptype'] == 'tcp':# and direction == 'outgoing':
             for rule in self.logRules:
-                packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
+                packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname, direction)
                 print packetResult
                 if packetResult == 'log':
                     print "log this packet"
                     #log
-                    self.reconstructPackets(packetDict, pkt)
+                    self.reconstructPackets(packetDict, pkt, direction)
                     break
         return True
 
-    def reconstructPackets(self, packetDict, pkt):
-        ip = packetDict['src_ip']
-        port = packetDict['src_port']
+    def reconstructPackets(self, packetDict, pkt, direction):
+        if direction == 'outgoing':
+            ip = packetDict['src_ip']
+            port = packetDict['src_port']
+        else:
+            ip = packetDict['dest_ip']
+            port = packetDict['dest_port']
         tcpOffset = packetDict['totalOffset']
         #need to check ack and seq number
         pkt = pkt[tcpOffset:]
-        if self.tcpHeaderBuffer.has_key((ip,port)):
+        if self.tcpHeaderBuffer.has_key((ip,port,direction)):
             if '\r\n\r\n' in pkt:
-                #WE know that this pkt contains the end of the http header
-                self.tcpHeaderBuffer[(ip,port)] += pkt.split('\r\n\r\n')[0]
-                header = self.tcpHeaderBuffer[(ip,port)]
-                #parseHttpHeader(header)
+                #We know that this pkt contains the end of the http header
+                self.tcpHeaderBuffer[(ip,port,direction)] += pkt.split('\r\n\r\n')[0]
+                header = self.tcpHeaderBuffer[(ip,port,direction)]
+                parseHttpHeader(header,ip,port,direction)
                 print header
-                del self.tcpHeaderBuffer[(ip,port)]
+                del self.tcpHeaderBuffer[(ip,port,direction)]
             else:
-                self.tcpHeaderBuffer[(ip,port)] += pkt
+                self.tcpHeaderBuffer[(ip,port,direction)] += pkt
         else:
-            self.tcpHeaderBuffer[(ip,port)] = pkt
-
-    def parseHttpHeader(self, header):
-        
+            self.tcpHeaderBuffer[(ip,port,direction)] = pkt
+    """GET / HTTP/1.1
+    User-Agent: Wget/1.14 (linux-gnu)
+    Accept: */*
+    Host: www.google.com
+    Connection: Keep-Alive"""
+    #google.com GET / HTTP/1.1 301 219
+    #host_name method path version status_code object_size
+    def parseHttpHeader(self, header,ip,port,direction):
+        if direction == 'outgoing':
+            requestInfo = header.split('\n')[0] # method path version
+            hostName = header.split('Host: ')[1].split()[0]
+            self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
+        else:
+            statusCode = header.split()[2]
+            objectSize = header.split("Content-Length: ")[1].split()[0]
+            requestInfo, hostName = self.tcpOutgoingInformationBuffer[(ip,port)]
+            self.logfile.write(hostName + " " + requestInfo + " " + statusCode + " " + objectSize + "\n")
+            self.logfile.flush()
+        print header.split()
         return None
 
     def makeRSTpacket(self, pkt):
