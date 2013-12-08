@@ -182,16 +182,12 @@ class Firewall:
         if packetDict['ptype'] == 'tcp':# and direction == 'outgoing':
             for rule in self.logRules:
                 packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
-                print packetResult
                 if packetResult == 'log':
-                    print "log this packet"
-                    #log
                     self.reconstructPackets(packetDict, pkt, direction)
                     break
         return True
 
     def reconstructPackets(self, packetDict, pkt, direction):
-        # print packetDict
         if direction == 'outgoing':
             ip = packetDict['src_ip']
             port = packetDict['src_port']
@@ -219,18 +215,16 @@ class Firewall:
             hostName = header.split('Host: ')[1].split()[0]
             self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
         else:
-            print header
             statusCode = header.split()[1]
             if "Content-Length" in header:
                 objectSize = header.split("Content-Length: ")[1].split()[0]
             else:
                 objectSize = "-1"
             if self.tcpOutgoingInformationBuffer.has_key((ip,port)):
-                requestInfo, hostName = self.tcpOutgoingInformationBuffer[(ip,port)]
+                hostName, requestInfo = self.tcpOutgoingInformationBuffer[(ip,port)]
                 self.logfile.write(hostName + " " + requestInfo + " " + statusCode + " " + objectSize + "\n")
                 self.logfile.flush()
                 del self.tcpOutgoingInformationBuffer[(ip,port)]
-        print header.split()
         return None
 
     def makeRSTpacket(self, pkt):
