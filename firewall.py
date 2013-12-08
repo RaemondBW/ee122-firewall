@@ -54,7 +54,7 @@ class Firewall:
             tcp_src, = struct.unpack('!H', pkt[0:2])
             tcp_dst, = struct.unpack('!H', pkt[2:4])
 
-            ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
+            ip_headerLen = (struct.unpack('!B', pkt[0])[0] & 0x0F) * 4
 
             src_ip = socket.inet_ntoa(pkt[12:16])
             dst_ip = socket.inet_ntoa(pkt[16:20])
@@ -70,24 +70,19 @@ class Firewall:
                 pktStuff['src_ip'] = pkt[12:16]
                 pktStuff['dst_ip'] = pkt[16:20]
             if pktStuff == None:
-                print "PKT STUFF IS NONE!!!"
                 if pkt_dir == PKT_DIR_INCOMING:
-                    print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                     self.iface_int.send_ip_packet(pkt)
                 elif pkt_dir == PKT_DIR_OUTGOING:
-                    print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                     self.iface_ext.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_INCOMING and self.passPacket(pktStuff,src_ip, pkt, 'incoming'):
-                print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                 self.iface_int.send_ip_packet(pkt)
             elif pkt_dir == PKT_DIR_OUTGOING and self.passPacket(pktStuff,dst_ip, pkt, 'outgoing'):
-                print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
                 self.iface_ext.send_ip_packet(pkt)
         #except:
         #    pass
 
 
-        print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
+        # print '%s len=%4dB, IPID=%5d  %15s -> %15s' % (dir_str, len(pkt), ipid, src_ip, dst_ip)
 
 
     def packetType(self, pkt, offset):
@@ -147,7 +142,7 @@ class Firewall:
 
 
     def passPacket(self, packetDict, ip, pkt, direction):
-        print "checking rules"
+        # print "checking rules"
         hostname = None
         eport = None
         if packetDict.has_key('hostname'):
@@ -168,11 +163,11 @@ class Firewall:
                     PORT = eport
 
                     if packetDict['ptype'] == 'dns':
-                        print "denying a dns query"
+                        # print "denying a dns query"
                         dnsPacket = self.createDenyDNSResponse(hostname,packetDict['queryID'],packetDict['dst_port'],packetDict['src_port'],packetDict['dst_ip'],packetDict['src_ip'])
                         self.iface_int.send_ip_packet(dnsPacket)
                     elif packetDict['ptype'] == 'tcp':
-                        print "denying a tcp packet"
+                        # print "denying a tcp packet"
                         rst_pkt = self.makeRSTpacket(pkt)
                         self.iface_int.send_ip_packet(rst_pkt)
                     return False
@@ -195,10 +190,13 @@ class Firewall:
         # print packetDict
 
         # check the tcp seq/ack number here
-        ipheader = struct.unpack('!B', pkt[0])[0] & 0x0F
+        ipheader = (struct.unpack('!B', pkt[0])[0] & 0x0F) * 4
         pkt_total_len = struct.unpack('!H', pkt[2:4])[0]
+        tcpheader = (struct.unpack('!B', pkt[ipheader+12])[0] >> 4) * 4
         tcp_seqno = struct.unpack('!L', pkt[ipheader+4:ipheader+8])[0]
 
+        # if len(pkt) == tcpheader + ipheader:
+        #     return True
 
         if direction == 'outgoing':
             ip = packetDict['src_ip']
@@ -217,18 +215,18 @@ class Firewall:
                     self.tcpHeaderBuffer[(ip,port,direction)] += pkt.split('\n\n')[0]
                     header = self.tcpHeaderBuffer[(ip,port,direction)]
                     self.parseHttpHeader(header,ip,port,direction)
-                    del self.tcpHeaderBuffer[(ip,port,direction)]
+                    del self.tcpheadereaderBuffer[(ip,port,direction)]
                     del self.expectedSeqno[(ip, port, direction)]
                 else:
                     self.tcpHeaderBuffer[(ip,port,direction)] += pkt
-                    self.expectedSeqno[(ip, port, direction)] = tcp_seqno + pkt_total_len - ipheader
+                    self.expectedSeqno[(ip, port, direction)] = tcp_seqno + pkt_total_len - tcpheader - ipheader
             elif tcp_seqno < self.expectedSeqno[(ip, port, direction)]:
                 return True
             else:
                 return False
         else:
             self.tcpHeaderBuffer[(ip,port,direction)] = pkt
-            self.expectedSeqno[(ip, port, direction)] = tcp_seqno + pkt_total_len - ipheader
+            self.expectedSeqno[(ip, port, direction)] = tcp_seqno + 1
         return True
 
     def parseHttpHeader(self, header,ip,port,direction):
@@ -237,7 +235,8 @@ class Firewall:
             hostName = header.split('Host: ')[1].split()[0]
             self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
         else:
-            print header
+            # print header
+            print "inside incoming"
             statusCode = header.split()[1]
             if "Content-Length" in header:
                 objectSize = header.split("Content-Length: ")[1].split()[0]
@@ -249,11 +248,14 @@ class Firewall:
                     self.logfile.write(hostName + " " + requestInfo + " " + statusCode + " " + objectSize + "\n")
                     self.logfile.flush()
                 del self.tcpOutgoingInformationBuffer[(ip,port)]
-        print header.split()
+                
+        # print header.split()
         return None
 
     def match_http_rule(self, hostname, ip):
+        print hostname
         for rule in self.logRules:
+            print rule.ipAddress
             if ("*" not in rule.ipAddress) and (hostname == rule.ipAddress or rule.ipAddress == ip):
                 return True
             elif "*" in rule.ipAddress:
@@ -267,7 +269,7 @@ class Firewall:
 
         # I did this to make a deep copy of the packet and cut off unnecessary options and tcp data. 
         # Not sure if it should be done this way.
-        ip_len = int(str(int(pkt[0],16) & 0b1111), 16)
+        ip_len = (struct.unpack('!B', pkt[0])[0] & 0x0F) * 4
         rst_pkt = pkt[:]
         # -------------------------------
         # fix the ip header and checksum
@@ -308,7 +310,7 @@ class Firewall:
         return rst_pkt
 
     def ip_checksum(self, pkt):
-        headerlen = int(str(int(pkt[0],16) & 0b1111), 16)
+        headerlen = (struct.unpack('!B', pkt[0])[0] & 0x0F) * 4
         total = 0
         counter = 0
         while(counter < headerlen):
@@ -321,7 +323,7 @@ class Firewall:
 
     def tcp_checksum(self, pkt):
         
-        ip_headerLen = int(str(int(pkt[0],16) & 0b1111), 16)
+        ip_headerLen = (struct.unpack('!B', pkt[0])[0] & 0x0F) * 4
         ip_src = struct.unpack('!H', pkt[12:14])[0] + struct.unpack('!H', pkt[14:16])[0]
         ip_dst = struct.unpack('!H', pkt[16:18])[0] + struct.unpack('!H', pkt[18:20])[0]
 
