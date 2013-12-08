@@ -181,7 +181,7 @@ class Firewall:
             return False
         if packetDict['ptype'] == 'tcp':# and direction == 'outgoing':
             for rule in self.logRules:
-                packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname, direction)
+                packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
                 print packetResult
                 if packetResult == 'log':
                     print "log this packet"
@@ -191,12 +191,13 @@ class Firewall:
         return True
 
     def reconstructPackets(self, packetDict, pkt, direction):
+        # print packetDict
         if direction == 'outgoing':
             ip = packetDict['src_ip']
             port = packetDict['src_port']
         else:
-            ip = packetDict['dest_ip']
-            port = packetDict['dest_port']
+            ip = packetDict['dst_ip']
+            port = packetDict['dst_port']
         tcpOffset = packetDict['totalOffset']
         #need to check ack and seq number
         pkt = pkt[tcpOffset:]
@@ -205,31 +206,30 @@ class Firewall:
                 #We know that this pkt contains the end of the http header
                 self.tcpHeaderBuffer[(ip,port,direction)] += pkt.split('\r\n\r\n')[0]
                 header = self.tcpHeaderBuffer[(ip,port,direction)]
-                parseHttpHeader(header,ip,port,direction)
-                print header
+                self.parseHttpHeader(header,ip,port,direction)
                 del self.tcpHeaderBuffer[(ip,port,direction)]
             else:
                 self.tcpHeaderBuffer[(ip,port,direction)] += pkt
         else:
             self.tcpHeaderBuffer[(ip,port,direction)] = pkt
-    """GET / HTTP/1.1
-    User-Agent: Wget/1.14 (linux-gnu)
-    Accept: */*
-    Host: www.google.com
-    Connection: Keep-Alive"""
-    #google.com GET / HTTP/1.1 301 219
-    #host_name method path version status_code object_size
+
     def parseHttpHeader(self, header,ip,port,direction):
         if direction == 'outgoing':
-            requestInfo = header.split('\n')[0] # method path version
+            requestInfo = header.split('\r\n')[0] # method path version
             hostName = header.split('Host: ')[1].split()[0]
             self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
         else:
-            statusCode = header.split()[2]
-            objectSize = header.split("Content-Length: ")[1].split()[0]
-            requestInfo, hostName = self.tcpOutgoingInformationBuffer[(ip,port)]
-            self.logfile.write(hostName + " " + requestInfo + " " + statusCode + " " + objectSize + "\n")
-            self.logfile.flush()
+            print header
+            statusCode = header.split()[1]
+            if "Content-Length" in header:
+                objectSize = header.split("Content-Length: ")[1].split()[0]
+            else:
+                objectSize = "-1"
+            if self.tcpOutgoingInformationBuffer.has_key((ip,port)):
+                requestInfo, hostName = self.tcpOutgoingInformationBuffer[(ip,port)]
+                self.logfile.write(hostName + " " + requestInfo + " " + statusCode + " " + objectSize + "\n")
+                self.logfile.flush()
+                del self.tcpOutgoingInformationBuffer[(ip,port)]
         print header.split()
         return None
 
