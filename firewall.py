@@ -36,6 +36,7 @@ class Firewall:
         self.tcpOutgoingInformationBuffer = {}
         self.logfile = open('http.log', 'a')
         self.lossrate = 0
+        self.prevIncr = 0
         if config.has_key('rule'):
             self.parseRules(config['rule'])
         if config.has_key('loss'):
@@ -177,12 +178,6 @@ class Firewall:
         if result != None and not result:
             return False
         if packetDict['ptype'] == 'tcp' and eport == 80:# and direction == 'outgoing':
-            # for rule in self.logRules:
-            #     packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
-            #     print packetResult
-            #     if packetResult == 'log':
-            #         print "log this packet"
-            #         #log
             return self.reconstructPackets(packetDict, pkt, direction)
         return True
 
@@ -193,10 +188,12 @@ class Firewall:
         ipheader = (struct.unpack('!B', pkt[0])[0] & 0x0F) * 4
         pkt_total_len = struct.unpack('!H', pkt[2:4])[0]
         tcpheader = (struct.unpack('!B', pkt[ipheader+12])[0] >> 4) * 4
-        tcp_seqno = struct.unpack('!L', pkt[ipheader+4:ipheader+8])[0]
+        tcp_seqno = struct.unpack('!I', pkt[ipheader+4:ipheader+8])[0]
 
         # if len(pkt) == tcpheader + ipheader:
         #     return True
+
+        flag = struct.unpack('!B', pkt[ipheader+13])[0]
 
         if direction == 'outgoing':
             ip = packetDict['src_ip']
@@ -205,29 +202,36 @@ class Firewall:
             ip = packetDict['dst_ip']
             port = packetDict['dst_port']
         tcpOffset = packetDict['totalOffset']
-        #need to check ack and seq number
+        increment = len(pkt) - tcpOffset
+
         pkt = pkt[tcpOffset:]
         if self.tcpHeaderBuffer.has_key((ip,port,direction)):
             if tcp_seqno == self.expectedSeqno[(ip, port, direction)]:
                 pkt = re.subn('\r',"",pkt)[0]
                 if '\n\n' in pkt:
+
                     #We know that this pkt contains the end of the http header
                     self.tcpHeaderBuffer[(ip,port,direction)] += pkt.split('\n\n')[0]
                     header = self.tcpHeaderBuffer[(ip,port,direction)]
                     self.parseHttpHeader(header,ip,port,direction)
-                    del self.tcpheadereaderBuffer[(ip,port,direction)]
-                    del self.expectedSeqno[(ip, port, direction)]
+                    del self.tcpHeaderBuffer[(ip,port,direction)]
+                    self.expectedSeqno[(ip, port, direction)] = tcp_seqno + increment
+                    return True
                 else:
                     self.tcpHeaderBuffer[(ip,port,direction)] += pkt
-                    self.expectedSeqno[(ip, port, direction)] = tcp_seqno + pkt_total_len - tcpheader - ipheader
+                    self.expectedSeqno[(ip, port, direction)] = tcp_seqno + increment
+                    return True
             elif tcp_seqno < self.expectedSeqno[(ip, port, direction)]:
                 return True
             else:
                 return False
         else:
             self.tcpHeaderBuffer[(ip,port,direction)] = pkt
-            self.expectedSeqno[(ip, port, direction)] = tcp_seqno + 1
-        return True
+            if flag == 0x02 or flag == 0x12:
+                self.expectedSeqno[(ip, port, direction)] = tcp_seqno + 1
+            else:
+                self.expectedSeqno[(ip, port, direction)] = tcp_seqno + increment
+            return True
 
     def parseHttpHeader(self, header,ip,port,direction):
         if direction == 'outgoing':
@@ -236,7 +240,6 @@ class Firewall:
             self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
         else:
             # print header
-            print "inside incoming"
             statusCode = header.split()[1]
             if "Content-Length" in header:
                 objectSize = header.split("Content-Length: ")[1].split()[0]
@@ -248,14 +251,12 @@ class Firewall:
                     self.logfile.write(hostName + " " + requestInfo + " " + statusCode + " " + objectSize + "\n")
                     self.logfile.flush()
                 del self.tcpOutgoingInformationBuffer[(ip,port)]
-                
+
         # print header.split()
         return None
 
     def match_http_rule(self, hostname, ip):
-        print hostname
         for rule in self.logRules:
-            print rule.ipAddress
             if ("*" not in rule.ipAddress) and (hostname == rule.ipAddress or rule.ipAddress == ip):
                 return True
             elif "*" in rule.ipAddress:
