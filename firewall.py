@@ -90,13 +90,11 @@ class Firewall:
         protocol, = struct.unpack('!B', pkt[9])
         packetDict = dict()
         if protocol == 6:
-            sequenceNumber = int(struct.unpack('!I',pkt[offset+4:offset+8])[0])
-            ackNumber = int(struct.unpack('!I',pkt[offset+8:offset+12]))
-            print "sequence number: " + str(sequenceNumber)
-            print "ack number: " + str(ackNumber)
-            tcpOffset = struct.unpack('!B',pkt[offset+12:offset+13])[0]
-            print "tcp Offset: " + tcpOffset
-            packetDict = {"ptype":"tcp", "src_port": struct.unpack('!H', pkt[offset:offset+2])[0], "dst_port": struct.unpack('!H', pkt[offset+2:offset+4])[0]}
+            sequenceNumber = struct.unpack('!I',pkt[offset+4:offset+8])[0]
+            ackNumber = struct.unpack('!I',pkt[offset+8:offset+12])[0]
+            tcpOffset = int(hex(struct.unpack('!B',pkt[offset+12:offset+13])[0])[2:3],16)*4
+            packetDict = {"ptype":"tcp", "src_port": struct.unpack('!H', pkt[offset:offset+2])[0], "dst_port": struct.unpack('!H', pkt[offset+2:offset+4])[0],\
+                            "sequenceNumber": sequenceNumber, "ackNumber": ackNumber, "tcpOffset": tcpOffset, "totalOffset": tcpOffset+offset}
         elif protocol == 17:
             dst_port = struct.unpack('!H', pkt[offset+2:offset+4])[0]
             src_port = struct.unpack('!H', pkt[offset:offset+2])[0]
@@ -179,30 +177,39 @@ class Firewall:
                     break # return currentResult == "pass"
         if result != None and not result:
             return False
-
-        if packetDict['ptype'] == 'tcp':
+        if packetDict['ptype'] == 'tcp' and direction == 'outgoing':
             for rule in self.logRules:
                 packetResult = rule.getPacketResult(packetDict['ptype'], ip, eport, hostname)
                 print packetResult
                 if packetResult == 'log':
                     print "log this packet"
                     #log
+                    self.reconstructPackets(packetDict, pkt)
                     break
         return True
 
     def reconstructPackets(self, packetDict, pkt):
         ip = packetDict['src_ip']
         port = packetDict['src_port']
+        tcpOffset = packetDict['totalOffset']
+        #need to check ack and seq number
+        pkt = pkt[tcpOffset:]
         if self.tcpHeaderBuffer.has_key((ip,port)):
             if '\r\n\r\n' in pkt:
                 #WE know that this pkt contains the end of the http header
                 self.tcpHeaderBuffer[(ip,port)] += pkt.split('\r\n\r\n')[0]
-                header = self.tcpHeaderBuffer[(ip,port)].decode('hex')
-                parseHttpHeader(header)
+                header = self.tcpHeaderBuffer[(ip,port)]
+                #parseHttpHeader(header)
+                print header
+                del self.tcpHeaderBuffer[(ip,port)]
             else:
                 self.tcpHeaderBuffer[(ip,port)] += pkt
         else:
             self.tcpHeaderBuffer[(ip,port)] = pkt
+
+    def parseHttpHeader(self, header):
+        
+        return None
 
     def makeRSTpacket(self, pkt):
 
