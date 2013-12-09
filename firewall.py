@@ -207,20 +207,21 @@ class Firewall:
         pkt = pkt[tcpOffset:]
         if self.tcpHeaderBuffer.has_key((ip,port,direction)):
             if tcp_seqno == self.expectedSeqno[(ip, port, direction)]:
-                pkt = re.subn('\r',"",pkt)[0]
-                if '\n\n' in pkt:
-
+                # pkt = re.subn('\r',"",pkt)[0]
+                self.tcpHeaderBuffer[(ip,port,direction)] += pkt 
+                split = self.tcpHeaderBuffer[(ip,port,direction)].splitlines()
+                if "" in split:
+                    #if '\n\n' in self.tcpHeaderBuffer[(ip,port,direction)]:
                     #We know that this pkt contains the end of the http header
-                    self.tcpHeaderBuffer[(ip,port,direction)] += pkt.split('\n\n')[0]
+                    self.tcpHeaderBuffer[(ip,port,direction)] = ''.join(split[:split.index("")])
+                    # self.tcpHeaderBuffer[(ip, port, direction)] = split[split.index("")-1]
+                    self.tcpHeaderBuffer[(ip,port,direction)] = self.tcpHeaderBuffer[(ip,port,direction)].split('\n\n')[0]
                     header = self.tcpHeaderBuffer[(ip,port,direction)]
                     self.parseHttpHeader(header,ip,port,direction)
                     del self.tcpHeaderBuffer[(ip,port,direction)]
-                    self.expectedSeqno[(ip, port, direction)] = tcp_seqno + increment
-                    return True
-                else:
-                    self.tcpHeaderBuffer[(ip,port,direction)] += pkt
-                    self.expectedSeqno[(ip, port, direction)] = tcp_seqno + increment
-                    return True
+
+                self.expectedSeqno[(ip, port, direction)] = tcp_seqno + increment
+                return True
             elif tcp_seqno < self.expectedSeqno[(ip, port, direction)]:
                 return True
             else:
@@ -239,7 +240,8 @@ class Firewall:
             hostName = header.split('Host: ')[1].split()[0]
             self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
         else:
-            # print header
+            print header
+            print "=================================================="
             statusCode = header.split()[1]
             if "Content-Length" in header:
                 objectSize = header.split("Content-Length: ")[1].split()[0]
