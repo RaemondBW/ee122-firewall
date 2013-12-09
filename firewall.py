@@ -224,15 +224,16 @@ class Firewall:
             else:
                 return False
         else:
-            self.tcpHeaderBuffer[(ip,port,direction)] = pkt
-            split = self.tcpHeaderBuffer[(ip,port,direction)].splitlines()
-            if "" in split:
-                #We know that this pkt contains the end of the http header
-                self.tcpHeaderBuffer[(ip,port,direction)] = "\n".join(split[:split.index("")])
-                header = self.tcpHeaderBuffer[(ip,port,direction)]
-                print header
-                self.parseHttpHeader(header,ip,port,direction)
-                del self.tcpHeaderBuffer[(ip,port,direction)]
+            if "HTTP" in pkt:
+                self.tcpHeaderBuffer[(ip,port,direction)] = pkt
+            # split = self.tcpHeaderBuffer[(ip,port,direction)].splitlines()
+            # if "" in split:
+            #     #We know that this pkt contains the end of the http header
+            #     self.tcpHeaderBuffer[(ip,port,direction)] = "\n".join(split[:split.index("")])
+            #     header = self.tcpHeaderBuffer[(ip,port,direction)]
+            #     print header
+            #     self.parseHttpHeader(header,ip,port,direction)
+            #     del self.tcpHeaderBuffer[(ip,port,direction)]
             
             if flag == 0x02 or flag == 0x12:
                 self.expectedSeqno[(ip, port, direction)] = tcp_seqno + 1
