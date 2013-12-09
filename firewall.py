@@ -211,12 +211,11 @@ class Firewall:
                 self.tcpHeaderBuffer[(ip,port,direction)] += pkt 
                 split = self.tcpHeaderBuffer[(ip,port,direction)].splitlines()
                 if "" in split:
-                    #if '\n\n' in self.tcpHeaderBuffer[(ip,port,direction)]:
                     #We know that this pkt contains the end of the http header
-                    self.tcpHeaderBuffer[(ip,port,direction)] = ''.join(split[:split.index("")])
-                    # self.tcpHeaderBuffer[(ip, port, direction)] = split[split.index("")-1]
-                    self.tcpHeaderBuffer[(ip,port,direction)] = self.tcpHeaderBuffer[(ip,port,direction)].split('\n\n')[0]
+                    self.tcpHeaderBuffer[(ip,port,direction)] = "\n".join(split[:split.index("")])
                     header = self.tcpHeaderBuffer[(ip,port,direction)]
+                    print header
+                    #if "HTTP" in header or "GET" in header:
                     self.parseHttpHeader(header,ip,port,direction)
                     del self.tcpHeaderBuffer[(ip,port,direction)]
 
@@ -240,8 +239,11 @@ class Firewall:
             hostName = header.split('Host: ')[1].split()[0]
             self.tcpOutgoingInformationBuffer[(ip,port)] = (hostName, requestInfo)
         else:
-            print header
+            # print header
             print "=================================================="
+            splitHeader = header.split("HTTP/1")
+            if len(splitHeader) > 1:
+                header = "HTTP/1" + splitHeader[1]
             statusCode = header.split()[1]
             if "Content-Length" in header:
                 objectSize = header.split("Content-Length: ")[1].split()[0]
